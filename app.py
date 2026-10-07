@@ -925,7 +925,45 @@ def render_product_card(
 
 if st.session_state.get("preferences", "").strip():
 
-    relevance = preference_relevance
+    def preference_relevance(product, preferences):
+    """
+    Calculate how relevant a product is based on user preferences.
+    Returns a score from 0 to 100.
+    """
+
+    if not preferences:
+        return 0
+
+    # Convert product information into searchable text
+    product_text = " ".join([
+        str(product.get("title", "")),
+        str(product.get("brand", "")),
+        str(product.get("description", "")),
+        str(product.get("category", "")),
+    ]).lower()
+
+    score = 0
+
+    # Handle preferences as a list
+    if isinstance(preferences, list):
+        for preference in preferences:
+            preference = str(preference).strip().lower()
+
+            if preference and preference in product_text:
+                score += 20
+
+    # Handle preferences as a dictionary
+    elif isinstance(preferences, dict):
+        for key, value in preferences.items():
+            if value:
+                search_text = str(value).lower()
+
+                if search_text in product_text:
+                    score += 20
+
+    return min(score, 100)
+    
+    relevance = preference_relevance(
         product,
         st.session_state.preferences
     )
