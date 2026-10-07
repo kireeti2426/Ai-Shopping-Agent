@@ -6,9 +6,9 @@ from itertools import product as cartesian_product
 from groq import Groq
 
 
-# =========================================================
+# ============================================================
 # PAGE CONFIG
-# =========================================================
+# ============================================================
 
 st.set_page_config(
     page_title="SmartShop AI",
@@ -18,93 +18,79 @@ st.set_page_config(
 )
 
 
-# =========================================================
-# CSS
-# =========================================================
+# ============================================================
+# CUSTOM CSS
+# ============================================================
 
-st.markdown(
-    """
-    <style>
+st.markdown("""
+<style>
 
-    .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 3rem;
-    }
+.main-title {
+    font-size: 42px;
+    font-weight: 800;
+    margin-bottom: 5px;
+}
 
-    .hero {
-        padding: 2rem;
-        border-radius: 22px;
-        background: linear-gradient(
-            135deg,
-            #eef2ff,
-            #f8fafc
-        );
-        border: 1px solid #e2e8f0;
-        margin-bottom: 1.5rem;
-    }
+.subtitle {
+    font-size: 18px;
+    color: #777;
+    margin-bottom: 25px;
+}
 
-    .hero h1 {
-        margin-bottom: .3rem;
-    }
+.product-card {
+    padding: 18px;
+    border-radius: 15px;
+    border: 1px solid #ddd;
+    margin-bottom: 15px;
+    background-color: rgba(255,255,255,0.03);
+}
 
-    .hero p {
-        color: #475569;
-        font-size: 1.05rem;
-    }
+.product-title {
+    font-size: 20px;
+    font-weight: 700;
+}
 
-    [data-testid="stSidebar"] {
-        border-right: 1px solid #e2e8f0;
-    }
+.product-price {
+    font-size: 24px;
+    font-weight: 800;
+}
 
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+.brand-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: #eeeeee;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 
-# =========================================================
-# API CONFIGURATION
-# =========================================================
+# ============================================================
+# API KEYS
+# ============================================================
 
 def get_secret(name):
-
     value = os.environ.get(name)
 
     if value:
-        return value.strip()
+        return value
 
     try:
-        value = st.secrets.get(name, "")
-        return str(value).strip() if value else ""
+        return st.secrets[name]
     except Exception:
-        return ""
+        return None
 
 
 GROQ_API_KEY = get_secret("GROQ_API_KEY")
 SERPAPI_API_KEY = get_secret("SERPAPI_API_KEY")
 
-groq_client = None
 
-
-def get_groq_client():
-
-    global groq_client
-
-    if groq_client is None and GROQ_API_KEY:
-
-        try:
-            groq_client = Groq(
-                api_key=GROQ_API_KEY
-            )
-        except Exception:
-            groq_client = None
-
-    return groq_client
-
-
-# =========================================================
+# ============================================================
 # SESSION STATE
-# =========================================================
+# ============================================================
 
 defaults = {
     "products": [],
@@ -112,11 +98,15 @@ defaults = {
     "saved_products": [],
     "search_history": [],
     "last_recommendation": None,
-    "budget": 20000,
+
+    "min_price": 5000,
+    "max_price": 100000,
+
     "preferences": "",
     "categories": [],
+
     "settings": {
-        "max_results": 8,
+        "max_results": 10,
         "ai_temperature": 0.1
     }
 }
@@ -127,9 +117,9 @@ for key, value in defaults.items():
         st.session_state[key] = value
 
 
-# =========================================================
-# HELPER FUNCTIONS
-# =========================================================
+# ============================================================
+# UTILITY FUNCTIONS
+# ============================================================
 
 def money(value):
 
@@ -138,7 +128,7 @@ def money(value):
 
     try:
         return f"₹{float(value):,.0f}"
-    except Exception:
+    except:
         return "Price unavailable"
 
 
@@ -152,27 +142,29 @@ def clean_price(value):
 
     text = str(value)
 
-    for symbol in ["₹", "$", "€", "£"]:
-        text = text.replace(symbol, "")
+    text = (
+        text.replace("₹", "")
+        .replace(",", "")
+        .replace("INR", "")
+        .replace("Rs.", "")
+        .replace("Rs", "")
+        .strip()
+    )
 
-    text = text.replace(",", "").strip()
-
-    number = ""
-    decimal_seen = False
+    numbers = ""
 
     for char in text:
 
-        if char.isdigit():
-            number += char
+        if char.isdigit() or char == ".":
 
-        elif char == "." and not decimal_seen:
-            number += char
-            decimal_seen = True
+            numbers += char
+
+        elif numbers:
+            break
 
     try:
-        return float(number) if number else None
-
-    except Exception:
+        return float(numbers)
+    except:
         return None
 
 
@@ -180,221 +172,619 @@ def safe_float(value, default=0):
 
     try:
         return float(value)
-
-    except Exception:
+    except:
         return default
 
 
-def normalize_product(
-    item,
-    category,
-    index
-):
+def normalize_brand(brand):
 
-    name = item.get(
-        "title",
-        "Unknown Product"
-    )
+    if not brand:
+        return ""
 
-    link = item.get(
-        "link",
-        ""
+    return str(brand).strip().lower()
+
+
+# ============================================================
+# PRODUCT NORMALIZATION
+# ============================================================
+
+def normalize_product(item, index=0):
+
+    title = (
+        item.get("title")
+        or item.get("name")
+        or "Unknown Product"
     )
 
     price = clean_price(
         item.get("price")
+        or item.get("extracted_price")
     )
 
-    # Guaranteed unique product ID
-    product_id = (
-        f"{category}_"
-        f"{index}_"
-        f"{abs(hash(str(name) + str(link) + str(index)))}"
+    rating = safe_float(
+        item.get("rating"),
+        0
     )
+
+    reviews = safe_float(
+        item.get("reviews")
+        or item.get("review_count"),
+        0
+    )
+
+    link = (
+        item.get("link")
+        or item.get("product_link")
+        or item.get("url")
+        or ""
+    )
+
+    thumbnail = (
+        item.get("thumbnail")
+        or item.get("image")
+        or ""
+    )
+
+    source = (
+        item.get("source")
+        or item.get("merchant")
+        or "Shopping Website"
+    )
+
+    brand = item.get("brand", "")
+
+    # Try to identify brand from title if API does not provide it
+    if not brand:
+
+        known_brands = [
+            "HP",
+            "Lenovo",
+            "Acer",
+            "ASUS",
+            "Dell",
+            "Apple",
+            "MSI",
+            "Samsung",
+            "LG",
+            "Sony",
+            "OnePlus",
+            "Xiaomi",
+            "Realme",
+            "Oppo",
+            "Vivo",
+            "Motorola",
+            "Google",
+            "Nothing",
+            "Boat",
+            "JBL",
+            "Canon",
+            "Nikon",
+            "Logitech"
+        ]
+
+        title_lower = title.lower()
+
+        for b in known_brands:
+
+            if b.lower() in title_lower:
+
+                brand = b
+                break
 
     return {
+        "id": str(
+            item.get("product_id")
+            or item.get("id")
+            or f"product_{index}_{abs(hash(title))}"
+        ),
 
-        "id": product_id,
-
-        "category": category,
-
-        "name": name,
+        "title": title,
 
         "price": price,
 
-        "display_price": money(price),
+        "rating": rating,
 
-        "source": item.get(
-            "source",
-            "Unknown"
-        ),
-
-        "rating": safe_float(
-            item.get("rating"),
-            0
-        ),
-
-        "reviews": safe_float(
-            item.get("reviews"),
-            0
-        ),
+        "reviews": reviews,
 
         "link": link,
 
-        "thumbnail": item.get(
-            "thumbnail",
-            ""
-        ),
+        "thumbnail": thumbnail,
 
-        "snippet": item.get(
-            "snippet",
-            ""
-        )
+        "source": source,
+
+        "brand": brand,
+
+        "raw": item
     }
 
 
-def get_product_by_id(product_id):
+# ============================================================
+# CATEGORY DETECTION
+# ============================================================
 
-    for product in st.session_state.products:
+def get_category_from_query(query):
 
-        if product["id"] == product_id:
-            return product
+    q = query.lower()
 
-    return None
+    if "laptop" in q:
+        return "Laptop"
+
+    if "phone" in q or "smartphone" in q or "mobile" in q:
+        return "Smartphone"
+
+    if "headphone" in q or "earphone" in q or "earbuds" in q:
+        return "Audio"
+
+    if "tv" in q or "television" in q:
+        return "TV"
+
+    if "camera" in q:
+        return "Camera"
+
+    if "watch" in q:
+        return "Smartwatch"
+
+    return query.strip().title()
 
 
-def get_categories():
-
-    return sorted(
-        list(
-            dict.fromkeys(
-                p["category"]
-                for p in st.session_state.products
-            )
-        )
-    )
-
-
-# =========================================================
-# SHOPPING SEARCH
-# =========================================================
+# ============================================================
+# SERPAPI SHOPPING SEARCH
+# ============================================================
 
 def search_shopping(
     query,
-    max_results=8
+    min_price,
+    max_price,
+    brands=None,
+    max_results=10
 ):
 
     if not SERPAPI_API_KEY:
 
-        st.warning(
-            "⚠️ SERPAPI_API_KEY is not configured. "
-            "Add it in Streamlit Secrets."
+        st.error(
+            "⚠️ SERPAPI_API_KEY not found. "
+            "Add it to Streamlit secrets."
         )
 
         return []
 
+    category = get_category_from_query(query)
+
+    # --------------------------------------------------------
+    # Add selected brands to search query
+    # --------------------------------------------------------
+
+    if brands:
+
+        brand_query = " OR ".join(
+            [f'"{brand}"' for brand in brands]
+        )
+
+        search_query = f"{query} ({brand_query})"
+
+    else:
+
+        search_query = query
+
+    url = "https://serpapi.com/search.json"
+
     params = {
 
-        "engine":
-            "google_shopping",
+        "engine": "google_shopping",
 
-        "q":
-            query,
+        "q": search_query,
 
-        "api_key":
-            SERPAPI_API_KEY,
+        "api_key": SERPAPI_API_KEY,
 
-        # India
-        "location":
-            "India",
+        "location": "India",
 
-        "google_domain":
-            "google.co.in",
+        "google_domain": "google.co.in",
 
-        "gl":
-            "in",
+        "gl": "in",
 
-        "hl":
-            "en",
+        "hl": "en",
 
-        "num":
-            max_results
+        "num": max_results
     }
 
     try:
 
         response = requests.get(
-            "https://serpapi.com/search.json",
+            url,
             params=params,
             timeout=30
         )
 
-        if response.status_code == 401:
+        if response.status_code != 200:
 
             st.error(
-                "❌ Invalid SerpAPI key."
+                f"Shopping API error: "
+                f"{response.status_code}"
             )
 
             return []
-
-        if response.status_code == 429:
-
-            st.warning(
-                "⚠️ SerpAPI request limit reached."
-            )
-
-            return []
-
-        response.raise_for_status()
 
         data = response.json()
 
-        if "error" in data:
-
-            st.warning(
-                f"SerpAPI error: "
-                f"{data['error']}"
-            )
-
-            return []
-
-        return data.get(
+        results = data.get(
             "shopping_results",
             []
         )
 
-    except requests.exceptions.Timeout:
+        products = []
+
+        for i, item in enumerate(results):
+
+            p = normalize_product(
+                item,
+                i
+            )
+
+            p["category"] = category
+
+            products.append(p)
+
+        return products
+
+    except Exception as e:
 
         st.error(
-            "⏱️ Shopping search timed out."
+            f"Unable to fetch shopping data: {e}"
         )
 
         return []
 
-    except requests.exceptions.RequestException as error:
 
-        st.error(
-            f"Shopping search failed: {error}"
-        )
+# ============================================================
+# STRICT PRODUCT FILTER
+# ============================================================
 
-        return []
-
-
-# =========================================================
-# GROQ
-# =========================================================
-
-def run_ai(
-    system_prompt,
-    user_prompt
+def filter_products(
+    products,
+    min_price,
+    max_price,
+    selected_brands=None,
+    products_per_category=10
 ):
 
-    client = get_groq_client()
+    selected_brands_normalized = []
 
-    if client is None:
+    if selected_brands:
+
+        selected_brands_normalized = [
+            normalize_brand(b)
+            for b in selected_brands
+        ]
+
+    filtered = []
+
+    for p in products:
+
+        price = p.get("price")
+
+        # ----------------------------------------------------
+        # PRICE FILTER
+        # ----------------------------------------------------
+
+        if price is None:
+            continue
+
+        if price < min_price:
+            continue
+
+        if price > max_price:
+            continue
+
+        # ----------------------------------------------------
+        # BRAND FILTER
+        # ----------------------------------------------------
+
+        if selected_brands_normalized:
+
+            product_brand = normalize_brand(
+                p.get("brand", "")
+            )
+
+            title_lower = p.get(
+                "title",
+                ""
+            ).lower()
+
+            brand_match = False
+
+            for brand in selected_brands_normalized:
+
+                if product_brand == brand:
+
+                    brand_match = True
+                    break
+
+                # Also check product title
+                if brand in title_lower:
+
+                    brand_match = True
+                    break
+
+            # IMPORTANT:
+            # If a brand was selected and the product
+            # does not belong to it, REMOVE it.
+
+            if not brand_match:
+
+                continue
+
+        filtered.append(p)
+
+    # --------------------------------------------------------
+    # GROUP BY CATEGORY
+    # --------------------------------------------------------
+
+    category_groups = {}
+
+    for p in filtered:
+
+        category = p.get(
+            "category",
+            "Other"
+        )
+
+        if category not in category_groups:
+
+            category_groups[category] = []
+
+        category_groups[category].append(p)
+
+    # --------------------------------------------------------
+    # STRICT PRODUCTS PER CATEGORY
+    # --------------------------------------------------------
+
+    final_products = []
+
+    for category, items in category_groups.items():
+
+        # Remove duplicates
+        unique = {}
+
+        for p in items:
+
+            pid = p["id"]
+
+            if pid not in unique:
+
+                unique[pid] = p
+
+        items = list(unique.values())
+
+        # Sort by rating first
+        items.sort(
+            key=lambda x: (
+                safe_float(x.get("rating")),
+                safe_float(x.get("reviews"))
+            ),
+            reverse=True
+        )
+
+        # HARD LIMIT
+        items = items[
+            :products_per_category
+        ]
+
+        final_products.extend(items)
+
+    return final_products
+
+
+# ============================================================
+# PRODUCT LOOKUP
+# ============================================================
+
+def get_product_by_id(product_id):
+
+    for p in st.session_state.products:
+
+        if p["id"] == product_id:
+
+            return p
+
+    return None
+
+
+# ============================================================
+# PRODUCT SCORING
+# ============================================================
+
+def product_score(product):
+
+    rating = safe_float(
+        product.get("rating"),
+        0
+    )
+
+    reviews = safe_float(
+        product.get("reviews"),
+        0
+    )
+
+    price = safe_float(
+        product.get("price"),
+        0
+    )
+
+    rating_score = min(
+        rating / 5,
+        1
+    )
+
+    review_score = min(
+        reviews / 1000,
+        1
+    )
+
+    if price > 0:
+
+        price_score = min(
+            100000 / price,
+            1
+        )
+
+    else:
+
+        price_score = 0
+
+    return (
+        rating_score * 0.50
+        + review_score * 0.20
+        + price_score * 0.30
+    )
+
+
+# ============================================================
+# OPTIMIZE COMBINATION
+# ============================================================
+
+def optimize_combination(
+    products,
+    min_price,
+    max_price,
+    strategy="Best Overall Value"
+):
+
+    if not products:
+
+        return None
+
+    # --------------------------------------------------------
+    # Group by category
+    # --------------------------------------------------------
+
+    category_groups = {}
+
+    for p in products:
+
+        price = p.get("price")
+
+        if price is None:
+            continue
+
+        if price < min_price:
+            continue
+
+        if price > max_price:
+            continue
+
+        category = p.get(
+            "category",
+            "Other"
+        )
+
+        if category not in category_groups:
+
+            category_groups[category] = []
+
+        category_groups[category].append(p)
+
+    if not category_groups:
+
+        return None
+
+    groups = list(
+        category_groups.values()
+    )
+
+    best = None
+
+    # --------------------------------------------------------
+    # Generate combinations
+    # --------------------------------------------------------
+
+    try:
+
+        combinations = cartesian_product(
+            *groups
+        )
+
+        for combo in combinations:
+
+            prices = [
+                safe_float(
+                    p.get("price"),
+                    0
+                )
+                for p in combo
+            ]
+
+            total = sum(prices)
+
+            # STRICT RANGE
+            if total < min_price:
+                continue
+
+            if total > max_price:
+                continue
+
+            # ----------------------------------------------
+            # Strategy scoring
+            # ----------------------------------------------
+
+            if strategy == "Lowest Cost":
+
+                score = -total
+
+            elif strategy == "Highest Rating":
+
+                score = sum(
+                    safe_float(
+                        p.get("rating"),
+                        0
+                    )
+                    for p in combo
+                )
+
+            else:
+
+                score = sum(
+                    product_score(p)
+                    for p in combo
+                )
+
+            if best is None:
+
+                best = {
+                    "products": list(combo),
+                    "total": total,
+                    "score": score
+                }
+
+            elif score > best["score"]:
+
+                best = {
+                    "products": list(combo),
+                    "total": total,
+                    "score": score
+                }
+
+    except Exception:
+
+        return None
+
+    return best
+
+
+# ============================================================
+# AI FUNCTION
+# ============================================================
+
+def run_ai(prompt):
+
+    if not GROQ_API_KEY:
+
         return None
 
     try:
+
+        client = Groq(
+            api_key=GROQ_API_KEY
+        )
 
         response = client.chat.completions.create(
 
@@ -403,437 +793,180 @@ def run_ai(
             messages=[
 
                 {
-                    "role":
-                        "system",
+                    "role": "system",
+                    "content": """
+You are an AI shopping advisor.
 
-                    "content":
-                        system_prompt
+Analyze products objectively.
+
+Consider:
+- Price
+- Rating
+- Reviews
+- Brand
+- Value
+- User preferences
+
+Do not invent specifications.
+"""
                 },
 
                 {
-                    "role":
-                        "user",
-
-                    "content":
-                        user_prompt
+                    "role": "user",
+                    "content": prompt
                 }
             ],
 
-            temperature=
-                st.session_state.settings[
-                    "ai_temperature"
-                ],
-
-            response_format={
-                "type":
-                    "json_object"
-            }
-        )
-
-        return response.choices[
-            0
-        ].message.content
-
-    except Exception as error:
-
-        st.warning(
-            f"AI service unavailable: {error}"
-        )
-
-        return None
-
-
-# =========================================================
-# PRODUCT SCORE
-# =========================================================
-
-def product_score(
-    product,
-    preferences=""
-):
-
-    rating = safe_float(
-        product.get("rating"),
-        0
-    )
-
-    rating_score = (
-        min(max(rating, 0), 5)
-        / 5
-        * 100
-    )
-
-    reviews = safe_float(
-        product.get("reviews"),
-        0
-    )
-
-    review_score = min(
-        reviews / 1000 * 100,
-        100
-    )
-
-    text = (
-        str(product.get("name", ""))
-        + " "
-        + str(product.get("snippet", ""))
-    ).lower()
-
-    preference_bonus = 0
-
-    for word in str(
-        preferences
-    ).lower().split():
-
-        if (
-            len(word) > 3
-            and word in text
-        ):
-
-            preference_bonus += 3
-
-    preference_bonus = min(
-        preference_bonus,
-        20
-    )
-
-    score = (
-
-        rating_score * 0.45
-
-        + review_score * 0.20
-
-        + 70 * 0.20
-
-        + preference_bonus * 0.15
-    )
-
-    return round(
-        min(score, 100),
-        1
-    )
-
-
-# =========================================================
-# BUDGET OPTIMIZATION
-# =========================================================
-
-def optimize_combination(
-    products,
-    budget,
-    strategy
-):
-
-    # IMPORTANT:
-    # Only products <= budget are considered.
-    eligible_products = [
-
-        p
-
-        for p in products
-
-        if p.get("price") is not None
-
-        and p["price"] <= budget
-    ]
-
-    if not eligible_products:
-        return None, []
-
-    categories = sorted(
-        list(
-            dict.fromkeys(
-                p["category"]
-                for p in eligible_products
-            )
-        )
-    )
-
-    if not categories:
-        return None, []
-
-    grouped = {}
-
-    for category in categories:
-
-        category_products = [
-
-            p
-
-            for p in eligible_products
-
-            if p["category"] == category
-        ]
-
-        if strategy == "Lowest Cost":
-
-            category_products.sort(
-                key=lambda p:
-                    p["price"]
-            )
-
-        elif strategy == "Highest Rating":
-
-            category_products.sort(
-                key=lambda p:
-                    (
-                        p["rating"],
-                        p["reviews"]
-                    ),
-                reverse=True
-            )
-
-        else:
-
-            category_products.sort(
-                key=lambda p:
-                    product_score(
-                        p,
-                        st.session_state.preferences
-                    ),
-                reverse=True
-            )
-
-        # Keep top 8 from each category
-        grouped[category] = (
-            category_products[:8]
-        )
-
-    # =====================================================
-    # FIND VALID COMBINATIONS
-    # =====================================================
-
-    best = None
-    alternatives = []
-
-    category_lists = list(
-        grouped.values()
-    )
-
-    for combination in cartesian_product(
-        *category_lists
-    ):
-
-        total = sum(
-            p["price"]
-            for p in combination
-        )
-
-        # CRITICAL:
-        # COMPLETE COMBINATION MUST BE
-        # WITHIN THE USER'S BUDGET.
-        if total > budget:
-            continue
-
-        # -------------------------------------------------
-        # Score
-        # -------------------------------------------------
-
-        if strategy == "Lowest Cost":
-
-            score = (
-                100
-                - (
-                    total / budget
-                ) * 100
-            )
-
-        elif strategy == "Highest Rating":
-
-            score = (
-
-                sum(
-                    p["rating"]
-                    for p in combination
-                )
-
-                / len(combination)
-
-                * 20
-            )
-
-        else:
-
-            scores = [
-
-                product_score(
-                    p,
-                    st.session_state.preferences
-                )
-
-                for p in combination
+            temperature=st.session_state.settings[
+                "ai_temperature"
             ]
-
-            average_score = (
-                sum(scores)
-                / len(scores)
-            )
-
-            # Reward useful use of budget,
-            # but never allow going over budget.
-            budget_usage = (
-                total / budget
-            )
-
-            score = (
-                average_score
-                + budget_usage * 10
-            )
-
-        result = {
-
-            "products":
-                list(combination),
-
-            "total":
-                total,
-
-            "remaining":
-                budget - total,
-
-            "score":
-                round(score, 1)
-        }
-
-        alternatives.append(
-            result
         )
 
-        if (
-            best is None
+        return response.choices[0].message.content
 
-            or result["score"]
-            > best["score"]
-        ):
+    except Exception as e:
 
-            best = result
-
-    alternatives.sort(
-        key=lambda x:
-            x["score"],
-        reverse=True
-    )
-
-    return best, alternatives
+        return f"AI error: {e}"
 
 
-# =========================================================
+# ============================================================
 # PRODUCT CARD
-# =========================================================
+# ============================================================
 
 def render_product_card(
     product,
     card_key,
-    show_compare=True,
-    show_save=True
+    show_compare=True
 ):
 
-    with st.container(
-        border=True
-    ):
+    st.markdown(
+        '<div class="product-card">',
+        unsafe_allow_html=True
+    )
 
-        col1, col2, col3 = st.columns(
-            [1, 3, 1]
+    col1, col2 = st.columns(
+        [1, 3]
+    )
+
+    # --------------------------------------------------------
+    # IMAGE
+    # --------------------------------------------------------
+
+    with col1:
+
+        if product.get("thumbnail"):
+
+            try:
+
+                st.image(
+                    product["thumbnail"],
+                    use_container_width=True
+                )
+
+            except:
+
+                st.write("🛍️")
+
+        else:
+
+            st.write("🛍️")
+
+    # --------------------------------------------------------
+    # DETAILS
+    # --------------------------------------------------------
+
+    with col2:
+
+        st.markdown(
+            f"""
+            <div class="product-title">
+            {product.get("title", "Product")}
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        # =================================================
-        # IMAGE
-        # =================================================
+        brand = product.get(
+            "brand",
+            ""
+        )
 
-        with col1:
-
-            if product.get(
-                "thumbnail"
-            ):
-
-                try:
-
-                    st.image(
-                        product["thumbnail"],
-                        width=120
-                    )
-
-                except Exception:
-
-                    st.markdown(
-                        "## 🛍️"
-                    )
-
-            else:
-
-                st.markdown(
-                    "## 🛍️"
-                )
-
-        # =================================================
-        # PRODUCT INFORMATION
-        # =================================================
-
-        with col2:
+        if brand:
 
             st.markdown(
-                f"### {product['name']}"
+                f"""
+                <span class="brand-badge">
+                {brand}
+                </span>
+                """,
+                unsafe_allow_html=True
             )
 
-            st.caption(
-                f"Category: "
-                f"{product['category']}"
-            )
+        st.markdown(
+            f"""
+            <div class="product-price">
+            {money(product.get("price"))}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-            st.write(
-                f"**Price:** "
-                f"{product['display_price']}"
-            )
+        rating = product.get(
+            "rating",
+            0
+        )
 
-            st.write(
-                f"⭐ "
-                f"{product['rating']:.1f}/5"
-                f"  •  "
-                f"{int(product['reviews']):,} reviews"
-            )
+        reviews = product.get(
+            "reviews",
+            0
+        )
 
-            st.write(
-                f"**AI Score:** "
-                f"{product_score(product, st.session_state.preferences)}/100"
-            )
+        st.write(
+            f"⭐ {rating}  |  "
+            f"💬 {int(reviews):,} reviews"
+        )
 
-            st.caption(
-                f"Seller: "
-                f"{product['source']}"
-            )
+        st.write(
+            f"🏪 {product.get('source', 'Shopping Website')}"
+        )
 
-        # =================================================
-        # ACTIONS
-        # =================================================
+        # ----------------------------------------------------
+        # BUTTONS
+        # ----------------------------------------------------
 
-        with col3:
+        b1, b2, b3 = st.columns(3)
+
+        # UNIQUE KEYS
+        compare_key = (
+            f"compare_{card_key}_{product['id']}"
+        )
+
+        save_key = (
+            f"save_{card_key}_{product['id']}"
+        )
+
+        visit_key = (
+            f"visit_{card_key}_{product['id']}"
+        )
+
+        with b1:
 
             if show_compare:
-
-                checkbox_key = (
-                    f"compare_"
-                    f"{card_key}_"
-                    f"{product['id']}"
-                )
 
                 checked = (
                     product["id"]
                     in st.session_state.selected_ids
                 )
 
-                selected = st.checkbox(
+                new_checked = st.checkbox(
                     "Compare",
                     value=checked,
-                    key=checkbox_key
+                    key=compare_key
                 )
 
-                if selected:
+                if new_checked:
 
-                    if (
-                        product["id"]
-                        not in
-                        st.session_state.selected_ids
-                    ):
+                    if product["id"] not in st.session_state.selected_ids:
 
                         st.session_state.selected_ids.append(
                             product["id"]
@@ -841,314 +974,312 @@ def render_product_card(
 
                 else:
 
-                    if (
-                        product["id"]
-                        in
-                        st.session_state.selected_ids
-                    ):
+                    if product["id"] in st.session_state.selected_ids:
 
                         st.session_state.selected_ids.remove(
                             product["id"]
                         )
 
-            # -------------------------------------------------
-            # SAVE
-            # -------------------------------------------------
+        with b2:
 
-            if show_save:
+            already_saved = any(
+                x["id"] == product["id"]
+                for x in st.session_state.saved_products
+            )
 
-                already_saved = any(
+            if st.button(
+                "❤️ Saved" if already_saved else "♡ Save",
+                key=save_key
+            ):
 
-                    p["id"]
-                    == product["id"]
+                if already_saved:
 
-                    for p in
-                    st.session_state.saved_products
-                )
-
-                if not already_saved:
-
-                    save_key = (
-                        f"save_"
-                        f"{card_key}_"
-                        f"{product['id']}"
-                    )
-
-                    if st.button(
-                        "♡ Save",
-                        key=save_key
-                    ):
-
-                        st.session_state.saved_products.append(
-                            product
-                        )
-
-                        st.toast(
-                            "Product saved!"
-                        )
-
-                        st.rerun()
+                    st.session_state.saved_products = [
+                        x for x in st.session_state.saved_products
+                        if x["id"] != product["id"]
+                    ]
 
                 else:
 
-                    st.caption(
-                        "❤️ Saved"
+                    st.session_state.saved_products.append(
+                        product
                     )
 
-            # -------------------------------------------------
-            # ACTUAL SHOPPING WEBSITE
-            # -------------------------------------------------
+                st.rerun()
 
-            if product.get(
-                "link"
-            ):
+        with b3:
 
-                link_key = (
-                    f"visit_"
-                    f"{card_key}_"
-                    f"{product['id']}"
-                )
+            if product.get("link"):
 
                 st.link_button(
                     "🛒 Visit Website",
                     product["link"],
-                    key=link_key
+                    key=visit_key
                 )
 
-
-# =========================================================
-# PAGE HEADER
-# =========================================================
-
-def page_header(
-    title,
-    description
-):
-
     st.markdown(
-        f"""
-        <div class="hero">
-
-            <h1>{title}</h1>
-
-            <p>{description}</p>
-
-        </div>
-        """,
+        "</div>",
         unsafe_allow_html=True
     )
 
 
-# =========================================================
+# ============================================================
+# PAGE HEADER
+# ============================================================
+
+def page_header(title, subtitle=""):
+
+    st.markdown(
+        f'<div class="main-title">{title}</div>',
+        unsafe_allow_html=True
+    )
+
+    if subtitle:
+
+        st.markdown(
+            f'<div class="subtitle">{subtitle}</div>',
+            unsafe_allow_html=True
+        )
+
+
+# ============================================================
 # SIDEBAR
-# =========================================================
+# ============================================================
 
-with st.sidebar:
+st.sidebar.title("🛍️ SmartShop AI")
 
-    st.title(
-        "🛍️ SmartShop AI"
-    )
+page = st.sidebar.radio(
 
-    st.caption(
-        "AI Shopping Comparison & "
-        "Budget Optimization"
-    )
+    "Navigation",
 
-    st.divider()
-
-    menu = st.radio(
-        "MENU",
-        [
-            "🏠 Home",
-            "🔎 Product Research",
-            "⚖️ Compare Products",
-            "🤖 AI Shopping Advisor",
-            "💰 Budget Planner",
-            "❤️ Saved Products",
-            "⚙️ Settings"
-        ]
-    )
-
-    st.divider()
-
-    st.metric(
-        "Products",
-        len(
-            st.session_state.products
-        )
-    )
-
-    st.metric(
-        "Saved",
-        len(
-            st.session_state.saved_products
-        )
-    )
-
-    st.metric(
-        "Budget",
-        money(
-            st.session_state.budget
-        )
-    )
+    [
+        "🏠 Home",
+        "🔎 Product Research",
+        "⚖️ Compare Products",
+        "🤖 AI Shopping Advisor",
+        "💰 Smart Combination",
+        "❤️ Saved Products",
+        "⚙️ Settings"
+    ]
+)
 
 
-# =========================================================
+# ============================================================
 # HOME
-# =========================================================
+# ============================================================
 
-if menu == "🏠 Home":
+if page == "🏠 Home":
 
     page_header(
         "🛍️ SmartShop AI",
-        "Compare products from shopping websites and find the best products within your budget."
+        "AI-powered shopping comparison and product research"
     )
 
-    st.subheader(
-        "What can SmartShop AI do?"
+    st.info(
+        """
+        Search products from shopping websites,
+        filter them by price and brand,
+        compare them, and find the best combination.
+        """
     )
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
 
     with c1:
 
-        st.info(
-            """
-            🔎
-
-            **Product Research**
-
-            Search products by category.
-            """
+        st.metric(
+            "Products",
+            len(st.session_state.products)
         )
 
     with c2:
 
-        st.info(
-            """
-            ⚖️
-
-            **Compare Products**
-
-            Compare price, ratings and reviews.
-            """
+        st.metric(
+            "Saved",
+            len(st.session_state.saved_products)
         )
 
     with c3:
 
-        st.info(
-            """
-            🤖
-
-            **AI Selection**
-
-            Automatically select the best options.
-            """
+        st.metric(
+            "Compared",
+            len(st.session_state.selected_ids)
         )
 
-    with c4:
+    st.markdown("### 🚀 Features")
 
-        st.info(
-            """
-            💰
-
-            **Budget Planner**
-
-            Find combinations within your budget.
-            """
-        )
-
-    st.divider()
-
-    st.subheader(
-        "How it works"
-    )
-
-    steps = [
-
-        "Set your total shopping budget",
-
-        "Enter the product categories you need",
-
-        "Search shopping websites",
-
-        "Compare products",
-
-        "Select products manually OR automatically",
-
-        "Get the best combination within budget",
-
-        "Open the product directly on the shopping website"
-    ]
-
-    for i, step in enumerate(
-        steps,
-        1
-    ):
-
-        st.markdown(
-            f"**{i}.** {step}"
-        )
-
-    st.success(
-        "👈 Select **Product Research** from the sidebar."
+    st.markdown(
+        """
+        - 🔎 Search products from shopping websites
+        - 💰 Filter by price range
+        - 🏷️ Optional brand filtering
+        - 📦 Limit products per category
+        - ⚖️ Compare multiple products
+        - 🤖 AI shopping recommendations
+        - 🧮 Smart combination optimization
+        - 🛒 Direct product website links
+        """
     )
 
 
-# =========================================================
+# ============================================================
 # PRODUCT RESEARCH
-# =========================================================
+# ============================================================
 
-elif menu == "🔎 Product Research":
+elif page == "🔎 Product Research":
 
     page_header(
         "🔎 Product Research",
-        "Search shopping websites by category and only show products that fit your budget."
+        "Find products within your selected price range and optional brands"
     )
 
-    # =====================================================
-    # NO "WHAT ARE YOU LOOKING FOR"
-    # =====================================================
+    # --------------------------------------------------------
+    # PRICE RANGE
+    # --------------------------------------------------------
 
-    budget = st.number_input(
-        "💰 Total Shopping Budget (₹)",
-        min_value=500,
-        max_value=10000000,
-        value=int(
-            st.session_state.budget
-        ),
-        step=500
-    )
+    st.subheader("💰 Price Range")
 
-    st.session_state.budget = budget
+    c1, c2 = st.columns(2)
 
-    categories_input = st.text_input(
-        "🛍️ Product Categories",
-        placeholder=(
-            "Example: Gaming Laptop, Headphones, Backpack"
+    with c1:
+
+        min_price = st.number_input(
+            "Minimum Price (₹)",
+            min_value=0,
+            value=5000,
+            step=500,
+            key="research_min_price"
         )
-    )
 
-    preferences = st.text_area(
-        "⭐ Preferences",
-        placeholder=(
-            "Example: high rating, lightweight, "
-            "good battery, student friendly"
+    with c2:
+
+        max_price = st.number_input(
+            "Maximum Price (₹)",
+            min_value=0,
+            value=100000,
+            step=500,
+            key="research_max_price"
         )
+
+    if min_price > max_price:
+
+        st.error(
+            "Minimum price cannot be greater than maximum price."
+        )
+
+        st.stop()
+
+    # --------------------------------------------------------
+    # CATEGORY
+    # --------------------------------------------------------
+
+    st.subheader("🛍️ Product Categories")
+
+    categories_text = st.text_input(
+        "Enter categories separated by commas",
+        placeholder="Laptop, Smartphone, Headphones",
+        key="categories_input"
     )
 
-    st.session_state.preferences = preferences
+    categories = [
+        x.strip()
+        for x in categories_text.split(",")
+        if x.strip()
+    ]
 
-    max_results = st.slider(
+    # --------------------------------------------------------
+    # BRAND OPTIONS
+    # --------------------------------------------------------
+
+    st.subheader("🏷️ Brand Filter")
+
+    st.caption(
+        "Optional: leave empty to show products from all brands."
+    )
+
+    # General brand list
+    brand_options = [
+        "HP",
+        "Lenovo",
+        "Acer",
+        "ASUS",
+        "Dell",
+        "Apple",
+        "MSI",
+        "Samsung",
+        "LG",
+        "Sony",
+        "OnePlus",
+        "Xiaomi",
+        "Realme",
+        "Oppo",
+        "Vivo",
+        "Motorola",
+        "Google",
+        "Nothing",
+        "Boat",
+        "JBL",
+        "Canon",
+        "Nikon",
+        "Logitech"
+    ]
+
+    selected_brands = st.multiselect(
+        "Select brand(s) — optional",
+        brand_options,
+        default=[],
+        key="brand_filter",
+        placeholder="All brands"
+    )
+
+    # --------------------------------------------------------
+    # BRAND INFORMATION
+    # --------------------------------------------------------
+
+    if selected_brands:
+
+        st.success(
+            "Only these brands will be shown: "
+            + ", ".join(selected_brands)
+        )
+
+    else:
+
+        st.info(
+            "No brand selected → products from all brands "
+            "can be shown."
+        )
+
+    # --------------------------------------------------------
+    # PREFERENCES
+    # --------------------------------------------------------
+
+    preferences = st.text_input(
+        "Additional preferences",
+        placeholder="Gaming, lightweight, long battery, 16GB RAM...",
+        key="preferences_input"
+    )
+
+    # --------------------------------------------------------
+    # PRODUCTS PER CATEGORY
+    # --------------------------------------------------------
+
+    products_per_category = st.number_input(
         "Products per category",
-        min_value=3,
-        max_value=15,
-        value=int(
-            st.session_state.settings[
-                "max_results"
-            ]
-        )
+        min_value=1,
+        max_value=20,
+        value=4,
+        step=1,
+        key="products_per_category_input"
     )
+
+    st.caption(
+        f"Maximum {products_per_category} products will be displayed for each category."
+    )
+
+    # --------------------------------------------------------
+    # SEARCH BUTTON
+    # --------------------------------------------------------
 
     if st.button(
         "🔎 Search Shopping Websites",
@@ -1156,883 +1287,453 @@ elif menu == "🔎 Product Research":
         use_container_width=True
     ):
 
-        if not categories_input.strip():
+        if not categories:
 
-            st.error(
+            st.warning(
                 "Please enter at least one product category."
+            )
+
+            st.stop()
+
+        # Clear previous products
+        st.session_state.products = []
+
+        st.session_state.selected_ids = []
+
+        all_products = []
+
+        progress = st.progress(0)
+
+        for i, category in enumerate(categories):
+
+            # ------------------------------------------------
+            # Request more results from API
+            # ------------------------------------------------
+
+            # We request more than needed because some
+            # products will be removed by price/brand filters.
+
+            requested_results = max(
+                products_per_category * 4,
+                20
+            )
+
+            results = search_shopping(
+                query=category,
+                min_price=min_price,
+                max_price=max_price,
+                brands=selected_brands,
+                max_results=requested_results
+            )
+
+            # ------------------------------------------------
+            # Store category
+            # ------------------------------------------------
+
+            for p in results:
+
+                p["category"] = get_category_from_query(
+                    category
+                )
+
+            all_products.extend(results)
+
+            progress.progress(
+                (i + 1) / len(categories)
+            )
+
+        # ----------------------------------------------------
+        # STRICT FILTER
+        # ----------------------------------------------------
+
+        final_products = filter_products(
+            all_products,
+            min_price,
+            max_price,
+            selected_brands,
+            products_per_category
+        )
+
+        # ----------------------------------------------------
+        # SAVE SEARCH RESULTS
+        # ----------------------------------------------------
+
+        st.session_state.products = final_products
+
+        st.session_state.min_price = min_price
+
+        st.session_state.max_price = max_price
+
+        st.session_state.preferences = preferences
+
+        st.session_state.categories = categories
+
+        st.session_state.search_history.append(
+            {
+                "categories": categories,
+                "min_price": min_price,
+                "max_price": max_price,
+                "brands": selected_brands
+            }
+        )
+
+        if final_products:
+
+            st.success(
+                f"Found {len(final_products)} products "
+                f"within ₹{min_price:,.0f} - ₹{max_price:,.0f}"
             )
 
         else:
 
-            # =================================================
-            # CLEAR OLD PRODUCTS
-            # =================================================
-
-            st.session_state.products = []
-            st.session_state.selected_ids = []
-            st.session_state.last_recommendation = None
-
-            categories = [
-
-                x.strip()
-
-                for x in
-                categories_input.split(",")
-
-                if x.strip()
-            ]
-
-            all_products = []
-
-            progress = st.progress(
-                0
+            st.warning(
+                "No products matched your selected "
+                "price range and brand filter."
             )
 
-            for category_index, category in enumerate(
-                categories
-            ):
-
-                # Search only the category
-                query = category
-
-                raw_results = search_shopping(
-                    query,
-                    max_results
-                )
-
-                for index, item in enumerate(
-                    raw_results
-                ):
-
-                    product = normalize_product(
-                        item,
-                        category,
-                        index
-                    )
-
-                    # =================================================
-                    # IMPORTANT BUDGET FILTER
-                    # =================================================
-
-                    if (
-                        product["price"]
-                        is not None
-
-                        and product["price"]
-                        <= budget
-                    ):
-
-                        all_products.append(
-                            product
-                        )
-
-                progress.progress(
-                    (
-                        category_index
-                        + 1
-                    )
-                    / len(categories)
-                )
-
-            st.session_state.products = (
-                all_products
-            )
-
-            st.session_state.categories = (
-                categories
-            )
-
-            st.session_state.search_history.append(
-                {
-                    "categories":
-                        categories,
-
-                    "budget":
-                        budget,
-
-                    "count":
-                        len(all_products)
-                }
-            )
-
-            if all_products:
-
-                st.success(
-                    f"Found "
-                    f"{len(all_products)} "
-                    f"products within your "
-                    f"{money(budget)} budget."
-                )
-
-            else:
-
-                st.warning(
-                    "No products were found within "
-                    "your budget."
-                )
-
-    # =====================================================
-    # DISPLAY RESULTS
-    # =====================================================
+    # --------------------------------------------------------
+    # DISPLAY PRODUCTS
+    # --------------------------------------------------------
 
     if st.session_state.products:
 
         st.divider()
 
         st.subheader(
-            "🛒 Products Within Budget"
+            "🛒 Shopping Results"
         )
 
-        st.info(
-            f"Only products priced at or below "
-            f"{money(st.session_state.budget)} "
-            f"are displayed."
+        # IMPORTANT:
+        # Re-filter AGAIN before displaying.
+        # This guarantees old products cannot appear
+        # outside the currently selected range.
+
+        display_products = filter_products(
+            st.session_state.products,
+            st.session_state.min_price,
+            st.session_state.max_price,
+            selected_brands,
+            products_per_category
         )
 
-        category_filter = st.selectbox(
-            "Category",
-            ["All"] + get_categories()
-        )
+        # ----------------------------------------------------
+        # FINAL SAFETY FILTER
+        # ----------------------------------------------------
 
-        sort_by = st.selectbox(
-            "Sort Products By",
-            [
-                "AI Score",
-                "Lowest Price",
-                "Highest Rating",
-                "Most Reviews"
+        display_products = [
+
+            p for p in display_products
+
+            if p.get("price") is not None
+
+            and p["price"] >= st.session_state.min_price
+
+            and p["price"] <= st.session_state.max_price
+        ]
+
+        # ----------------------------------------------------
+        # BRAND FINAL SAFETY FILTER
+        # ----------------------------------------------------
+
+        if selected_brands:
+
+            normalized_selected = [
+                normalize_brand(x)
+                for x in selected_brands
             ]
-        )
 
-        products = list(
-            st.session_state.products
-        )
+            strict_brand_products = []
 
-        if category_filter != "All":
+            for p in display_products:
 
-            products = [
+                title = p.get(
+                    "title",
+                    ""
+                ).lower()
 
-                p
+                brand = normalize_brand(
+                    p.get("brand", "")
+                )
 
-                for p in products
+                matched = False
 
-                if p["category"]
-                == category_filter
+                for selected in normalized_selected:
+
+                    if brand == selected:
+
+                        matched = True
+                        break
+
+                    if selected in title:
+
+                        matched = True
+                        break
+
+                if matched:
+
+                    strict_brand_products.append(p)
+
+            display_products = strict_brand_products
+
+        # ----------------------------------------------------
+        # DISPLAY GROUPED BY CATEGORY
+        # ----------------------------------------------------
+
+        grouped = {}
+
+        for p in display_products:
+
+            category = p.get(
+                "category",
+                "Other"
+            )
+
+            if category not in grouped:
+
+                grouped[category] = []
+
+            grouped[category].append(p)
+
+        for category, items in grouped.items():
+
+            st.markdown(
+                f"### 📦 {category} "
+                f"({len(items)} products)"
+            )
+
+            # FINAL HARD LIMIT
+            items = items[
+                :products_per_category
             ]
 
-        if sort_by == "AI Score":
+            for index, product in enumerate(items):
 
-            products.sort(
-                key=lambda p:
-                    product_score(
-                        p,
-                        st.session_state.preferences
-                    ),
-                reverse=True
-            )
-
-        elif sort_by == "Lowest Price":
-
-            products.sort(
-                key=lambda p:
-                    p["price"]
-            )
-
-        elif sort_by == "Highest Rating":
-
-            products.sort(
-                key=lambda p:
-                    p["rating"],
-                reverse=True
-            )
-
-        else:
-
-            products.sort(
-                key=lambda p:
-                    p["reviews"],
-                reverse=True
-            )
-
-        for index, product in enumerate(
-            products
-        ):
-
-            render_product_card(
-                product,
-                card_key=f"research_{index}",
-                show_compare=True,
-                show_save=True
-            )
+                render_product_card(
+                    product,
+                    f"research_{category}_{index}"
+                )
 
 
-# =========================================================
+# ============================================================
 # COMPARE PRODUCTS
-# =========================================================
+# ============================================================
 
-elif menu == "⚖️ Compare Products":
+elif page == "⚖️ Compare Products":
 
     page_header(
         "⚖️ Compare Products",
-        "Compare your selected products before purchasing."
+        "Compare the products you selected"
     )
 
-    selected_products = []
+    selected = []
 
-    for product_id in (
-        st.session_state.selected_ids
-    ):
+    for product_id in st.session_state.selected_ids:
 
-        product = get_product_by_id(
+        p = get_product_by_id(
             product_id
         )
 
-        if product:
+        if p:
 
-            selected_products.append(
-                product
-            )
+            selected.append(p)
 
-    if not selected_products:
+    if not selected:
 
         st.info(
-            "No products selected. "
-            "Go to Product Research and select Compare."
+            "Go to Product Research and select "
+            "products using the Compare checkbox."
         )
 
     else:
 
-        st.success(
-            f"{len(selected_products)} "
-            f"products selected."
+        st.subheader(
+            f"Selected Products: {len(selected)}"
         )
 
-        comparison_data = []
+        for i, p in enumerate(selected):
 
-        for product in selected_products:
+            render_product_card(
+                p,
+                f"compare_page_{i}",
+                show_compare=False
+            )
 
-            comparison_data.append(
+        st.divider()
+
+        # ----------------------------------------------------
+        # COMPARISON TABLE
+        # ----------------------------------------------------
+
+        data = []
+
+        for p in selected:
+
+            data.append(
                 {
-                    "Category":
-                        product["category"],
-
-                    "Product":
-                        product["name"],
-
-                    "Price":
-                        product["display_price"],
-
-                    "Rating":
-                        f"{product['rating']:.1f}/5",
-
-                    "Reviews":
-                        int(product["reviews"]),
-
-                    "AI Score":
-                        product_score(
-                            product,
-                            st.session_state.preferences
-                        ),
-
-                    "Website":
-                        product["source"]
+                    "Product": p["title"],
+                    "Brand": p.get("brand", "Unknown"),
+                    "Price": money(p["price"]),
+                    "Rating": p.get("rating", 0),
+                    "Reviews": int(
+                        safe_float(
+                            p.get("reviews"),
+                            0
+                        )
+                    ),
+                    "Website": p.get(
+                        "source",
+                        "Shopping Website"
+                    )
                 }
             )
 
         st.dataframe(
-            comparison_data,
-            use_container_width=True,
-            hide_index=True
+            data,
+            use_container_width=True
         )
 
-        st.divider()
 
-        best = max(
-            selected_products,
-            key=lambda p:
-                product_score(
-                    p,
-                    st.session_state.preferences
-                )
-        )
-
-        st.subheader(
-            "🏆 Best Overall"
-        )
-
-        render_product_card(
-            best,
-            card_key="best_comparison",
-            show_compare=False,
-            show_save=True
-        )
-
-        st.divider()
-
-        st.subheader(
-            "Product Details"
-        )
-
-        for index, product in enumerate(
-            selected_products
-        ):
-
-            with st.expander(
-                product["name"]
-            ):
-
-                c1, c2, c3 = st.columns(3)
-
-                with c1:
-
-                    st.metric(
-                        "Price",
-                        product["display_price"]
-                    )
-
-                with c2:
-
-                    st.metric(
-                        "Rating",
-                        f"{product['rating']:.1f}/5"
-                    )
-
-                with c3:
-
-                    st.metric(
-                        "AI Score",
-                        f"{product_score(product, st.session_state.preferences)}/100"
-                    )
-
-                st.write(
-                    f"Reviews: "
-                    f"{int(product['reviews']):,}"
-                )
-
-                if product.get(
-                    "link"
-                ):
-
-                    st.link_button(
-                        "🛒 Visit Website",
-                        product["link"],
-                        key=f"compare_link_{index}"
-                    )
-
-        if st.button(
-            "🗑️ Clear Comparison"
-        ):
-
-            st.session_state.selected_ids = []
-
-            st.rerun()
-
-
-# =========================================================
+# ============================================================
 # AI SHOPPING ADVISOR
-# =========================================================
+# ============================================================
 
-elif menu == "🤖 AI Shopping Advisor":
+elif page == "🤖 AI Shopping Advisor":
 
     page_header(
         "🤖 AI Shopping Advisor",
-        "Select products manually or let AI find the best combination within your total budget."
+        "Get an AI-based recommendation from your selected products"
     )
 
-    if not st.session_state.products:
+    selected = []
 
-        st.info(
-            "Search products first."
+    for product_id in st.session_state.selected_ids:
+
+        p = get_product_by_id(
+            product_id
+        )
+
+        if p:
+
+            selected.append(p)
+
+    if not selected:
+
+        st.warning(
+            "Select products from Product Research first."
         )
 
     else:
 
-        budget = st.number_input(
-            "💰 Shopping Budget (₹)",
-            min_value=500,
-            max_value=10000000,
-            value=int(
-                st.session_state.budget
-            ),
-            step=500
+        st.write(
+            f"Analyzing {len(selected)} selected products..."
         )
 
-        st.session_state.budget = budget
+        product_data = []
 
-        mode = st.radio(
-            "Selection Mode",
-            [
-                "👤 Manual Selection",
-                "🤖 Automatic Selection"
-            ],
-            horizontal=True
-        )
+        for p in selected:
 
-        # =================================================
-        # MANUAL
-        # =================================================
-
-        if mode == "👤 Manual Selection":
-
-            st.subheader(
-                "👤 Manual Selection"
+            product_data.append(
+                {
+                    "title": p["title"],
+                    "brand": p.get("brand"),
+                    "price": p.get("price"),
+                    "rating": p.get("rating"),
+                    "reviews": p.get("reviews"),
+                    "category": p.get("category")
+                }
             )
 
-            selected = []
+        prompt = f"""
+Compare these products:
 
-            for product_id in (
-                st.session_state.selected_ids
-            ):
+{json.dumps(product_data, indent=2)}
 
-                product = get_product_by_id(
-                    product_id
-                )
+User preferences:
+{st.session_state.preferences}
 
-                if product:
+Price range:
+₹{st.session_state.min_price:,.0f}
+to
+₹{st.session_state.max_price:,.0f}
 
-                    selected.append(
-                        product
-                    )
+Give:
 
-            if not selected:
+1. Best overall
+2. Best value
+3. Best premium choice
+4. Best budget choice
+5. Short explanation
 
-                st.warning(
-                    "Select products from Product Research."
+Do not invent specifications.
+"""
+
+        if st.button(
+            "🤖 Analyze Products",
+            type="primary"
+        ):
+
+            answer = run_ai(
+                prompt
+            )
+
+            if answer:
+
+                st.markdown(
+                    answer
                 )
 
             else:
 
-                total = sum(
-                    p["price"]
-                    for p in selected
+                st.warning(
+                    "Groq API key is not configured."
                 )
 
-                remaining = (
-                    budget - total
-                )
 
-                c1, c2, c3 = st.columns(3)
+# ============================================================
+# SMART COMBINATION
+# ============================================================
 
-                with c1:
-
-                    st.metric(
-                        "Products",
-                        len(selected)
-                    )
-
-                with c2:
-
-                    st.metric(
-                        "Total",
-                        money(total)
-                    )
-
-                with c3:
-
-                    st.metric(
-                        "Remaining",
-                        money(remaining)
-                    )
-
-                if total <= budget:
-
-                    st.success(
-                        "✅ Selection is within budget."
-                    )
-
-                else:
-
-                    st.error(
-                        "❌ Selection is above budget."
-                    )
-
-                for index, product in enumerate(
-                    selected
-                ):
-
-                    render_product_card(
-                        product,
-                        card_key=f"manual_{index}",
-                        show_compare=False,
-                        show_save=True
-                    )
-
-        # =================================================
-        # AUTOMATIC
-        # =================================================
-
-        else:
-
-            st.subheader(
-                "🤖 Automatic Selection"
-            )
-
-            strategy = st.selectbox(
-                "Optimization Strategy",
-                [
-                    "Best Overall Value",
-                    "Lowest Cost",
-                    "Highest Rating"
-                ]
-            )
-
-            if st.button(
-                "🤖 Find Best Combination",
-                type="primary",
-                use_container_width=True
-            ):
-
-                with st.spinner(
-                    "Finding the best combination..."
-                ):
-
-                    best, alternatives = (
-                        optimize_combination(
-                            st.session_state.products,
-                            budget,
-                            strategy
-                        )
-                    )
-
-                    if not best:
-
-                        st.error(
-                            "No complete combination "
-                            "fits within your budget."
-                        )
-
-                    else:
-
-                        ai_data = {}
-
-                        # =====================================
-                        # AI ANALYSIS
-                        # =====================================
-
-                        if GROQ_API_KEY:
-
-                            product_data = []
-
-                            for product in best[
-                                "products"
-                            ]:
-
-                                product_data.append(
-                                    {
-                                        "category":
-                                            product[
-                                                "category"
-                                            ],
-
-                                        "name":
-                                            product[
-                                                "name"
-                                            ],
-
-                                        "price":
-                                            product[
-                                                "price"
-                                            ],
-
-                                        "rating":
-                                            product[
-                                                "rating"
-                                            ],
-
-                                        "reviews":
-                                            product[
-                                                "reviews"
-                                            ]
-                                    }
-                                )
-
-                            system_prompt = """
-You are an expert AI shopping advisor.
-
-Analyze the selected shopping combination.
-
-Never invent product facts.
-
-Explain:
-1. Why these products were selected.
-2. Main advantages.
-3. Main trade-offs.
-4. Whether the combination fits the budget.
-5. Buying tips.
-
-Return JSON with:
-recommendation
-reasons
-tradeoffs
-buying_tips
-"""
-
-                            user_prompt = json.dumps(
-                                {
-                                    "budget":
-                                        budget,
-
-                                    "strategy":
-                                        strategy,
-
-                                    "preferences":
-                                        st.session_state.preferences,
-
-                                    "products":
-                                        product_data
-                                },
-                                indent=2
-                            )
-
-                            raw = run_ai(
-                                system_prompt,
-                                user_prompt
-                            )
-
-                            if raw:
-
-                                try:
-
-                                    ai_data = json.loads(
-                                        raw
-                                    )
-
-                                except Exception:
-
-                                    ai_data = {
-                                        "recommendation":
-                                            raw,
-
-                                        "reasons":
-                                            [],
-
-                                        "tradeoffs":
-                                            [],
-
-                                        "buying_tips":
-                                            []
-                                    }
-
-                        st.session_state.last_recommendation = {
-
-                            "best":
-                                best,
-
-                            "alternatives":
-                                alternatives,
-
-                            "ai":
-                                ai_data,
-
-                            "budget":
-                                budget
-                        }
-
-            recommendation = (
-                st.session_state.last_recommendation
-            )
-
-            if recommendation:
-
-                best = recommendation[
-                    "best"
-                ]
-
-                alternatives = recommendation[
-                    "alternatives"
-                ]
-
-                ai = recommendation[
-                    "ai"
-                ]
-
-                st.divider()
-
-                st.subheader(
-                    "🏆 Recommended Combination"
-                )
-
-                c1, c2, c3 = st.columns(3)
-
-                with c1:
-
-                    st.metric(
-                        "Total Cost",
-                        money(best["total"])
-                    )
-
-                with c2:
-
-                    st.metric(
-                        "Remaining Budget",
-                        money(best["remaining"])
-                    )
-
-                with c3:
-
-                    st.metric(
-                        "Plan Score",
-                        f"{best['score']}/100"
-                    )
-
-                # Safety check
-                if best["total"] > budget:
-
-                    st.error(
-                        "⚠️ ERROR: Recommended combination "
-                        "exceeds your budget."
-                    )
-
-                else:
-
-                    st.success(
-                        f"✅ Combination is within "
-                        f"{money(budget)} budget."
-                    )
-
-                for index, product in enumerate(
-                    best["products"]
-                ):
-
-                    render_product_card(
-                        product,
-                        card_key=f"recommendation_{index}",
-                        show_compare=False,
-                        show_save=True
-                    )
-
-                if ai.get(
-                    "recommendation"
-                ):
-
-                    st.info(
-                        "🤖 "
-                        + str(
-                            ai[
-                                "recommendation"
-                            ]
-                        )
-                    )
-
-                if ai.get(
-                    "reasons"
-                ):
-
-                    st.subheader(
-                        "Why this combination?"
-                    )
-
-                    for reason in ai[
-                        "reasons"
-                    ]:
-
-                        st.markdown(
-                            f"• {reason}"
-                        )
-
-                if ai.get(
-                    "tradeoffs"
-                ):
-
-                    st.subheader(
-                        "⚖️ Trade-offs"
-                    )
-
-                    for tradeoff in ai[
-                        "tradeoffs"
-                    ]:
-
-                        st.markdown(
-                            f"• {tradeoff}"
-                        )
-
-                if ai.get(
-                    "buying_tips"
-                ):
-
-                    st.subheader(
-                        "💡 Buying Tips"
-                    )
-
-                    for tip in ai[
-                        "buying_tips"
-                    ]:
-
-                        st.markdown(
-                            f"• {tip}"
-                        )
-
-                if len(
-                    alternatives
-                ) > 1:
-
-                    st.subheader(
-                        "🔄 Alternative Combinations"
-                    )
-
-                    for index, option in enumerate(
-                        alternatives[1:5],
-                        1
-                    ):
-
-                        with st.container(
-                            border=True
-                        ):
-
-                            st.write(
-                                f"**Option {index}**"
-                            )
-
-                            st.write(
-                                " + ".join(
-                                    p["name"]
-                                    for p in option[
-                                        "products"
-                                    ]
-                                )
-                            )
-
-                            st.caption(
-                                f"Total: "
-                                f"{money(option['total'])}"
-                                f" | Remaining: "
-                                f"{money(option['remaining'])}"
-                                f" | Score: "
-                                f"{option['score']}/100"
-                            )
-
-
-# =========================================================
-# BUDGET PLANNER
-# =========================================================
-
-elif menu == "💰 Budget Planner":
+elif page == "💰 Smart Combination":
 
     page_header(
-        "💰 Budget Planner",
-        "Find product combinations that never exceed your total budget."
+        "🧮 Smart Combination",
+        "Find a combination of products inside your selected price range"
     )
 
     if not st.session_state.products:
 
         st.info(
-            "Search products first."
+            "Search for products first."
         )
 
     else:
 
-        budget = st.number_input(
-            "💰 Available Budget (₹)",
-            min_value=500,
-            max_value=10000000,
-            value=int(
-                st.session_state.budget
-            ),
-            step=500
-        )
+        c1, c2 = st.columns(2)
+
+        with c1:
+
+            min_combo = st.number_input(
+                "Minimum total price (₹)",
+                min_value=0,
+                value=int(
+                    st.session_state.min_price
+                ),
+                step=500
+            )
+
+        with c2:
+
+            max_combo = st.number_input(
+                "Maximum total price (₹)",
+                min_value=0,
+                value=int(
+                    st.session_state.max_price
+                ),
+                step=500
+            )
 
         strategy = st.selectbox(
-            "Strategy",
+            "Optimization Strategy",
             [
                 "Best Overall Value",
                 "Lowest Cost",
@@ -2041,123 +1742,51 @@ elif menu == "💰 Budget Planner":
         )
 
         if st.button(
-            "💰 Optimize Budget",
+            "🧮 Find Best Combination",
             type="primary"
         ):
 
-            best, alternatives = (
-                optimize_combination(
-                    st.session_state.products,
-                    budget,
-                    strategy
-                )
+            result = optimize_combination(
+                st.session_state.products,
+                min_combo,
+                max_combo,
+                strategy
             )
 
-            if not best:
+            if result:
 
-                st.error(
-                    "No complete combination fits "
-                    "within your budget."
+                st.success(
+                    f"Combination total: "
+                    f"{money(result['total'])}"
                 )
+
+                for i, p in enumerate(
+                    result["products"]
+                ):
+
+                    render_product_card(
+                        p,
+                        f"combo_{i}",
+                        show_compare=False
+                    )
 
             else:
 
-                # Final safety check
-                if best["total"] > budget:
-
-                    st.error(
-                        "Invalid combination detected."
-                    )
-
-                else:
-
-                    st.success(
-                        "Best combination found!"
-                    )
-
-                    c1, c2, c3 = st.columns(3)
-
-                    with c1:
-
-                        st.metric(
-                            "Budget",
-                            money(budget)
-                        )
-
-                    with c2:
-
-                        st.metric(
-                            "Total",
-                            money(best["total"])
-                        )
-
-                    with c3:
-
-                        st.metric(
-                            "Remaining",
-                            money(best["remaining"])
-                        )
-
-                    st.subheader(
-                        "🏆 Recommended Combination"
-                    )
-
-                    for index, product in enumerate(
-                        best["products"]
-                    ):
-
-                        render_product_card(
-                            product,
-                            card_key=f"budget_{index}",
-                            show_compare=False,
-                            show_save=True
-                        )
-
-                    st.subheader(
-                        "🔄 Alternative Plans"
-                    )
-
-                    for index, option in enumerate(
-                        alternatives[1:5],
-                        1
-                    ):
-
-                        with st.container(
-                            border=True
-                        ):
-
-                            st.write(
-                                f"**Option {index}**"
-                            )
-
-                            st.write(
-                                " + ".join(
-                                    p["name"]
-                                    for p in option[
-                                        "products"
-                                    ]
-                                )
-                            )
-
-                            st.caption(
-                                f"Total: "
-                                f"{money(option['total'])}"
-                                f" | Remaining: "
-                                f"{money(option['remaining'])}"
-                                f" | Score: "
-                                f"{option['score']}/100"
-                            )
+                st.warning(
+                    "No valid combination was found "
+                    "inside the selected price range."
+                )
 
 
-# =========================================================
+# ============================================================
 # SAVED PRODUCTS
-# =========================================================
+# ============================================================
 
-elif menu == "❤️ Saved Products":
+elif page == "❤️ Saved Products":
 
     page_header(
         "❤️ Saved Products",
-        "Products you saved for later."
+        "Your saved shopping products"
     )
 
     if not st.session_state.saved_products:
@@ -2168,199 +1797,83 @@ elif menu == "❤️ Saved Products":
 
     else:
 
-        st.write(
-            f"You have "
-            f"**{len(st.session_state.saved_products)}** "
-            f"saved products."
-        )
-
-        if st.button(
-            "🗑️ Clear All Saved Products"
-        ):
-
-            st.session_state.saved_products = []
-
-            st.rerun()
-
-        for index, product in enumerate(
+        for i, p in enumerate(
             st.session_state.saved_products
         ):
 
             render_product_card(
-                product,
-                card_key=f"saved_{index}",
-                show_compare=False,
-                show_save=False
+                p,
+                f"saved_{i}",
+                show_compare=False
             )
 
 
-# =========================================================
+# ============================================================
 # SETTINGS
-# =========================================================
+# ============================================================
 
-elif menu == "⚙️ Settings":
+elif page == "⚙️ Settings":
 
     page_header(
         "⚙️ Settings",
-        "Configure SmartShop AI."
+        "Configure SmartShop AI"
     )
 
-    st.subheader(
-        "🔌 API Status"
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        if GROQ_API_KEY:
-
-            st.success(
-                "Groq API: Connected"
-            )
-
-        else:
-
-            st.warning(
-                "Groq API: Not configured"
-            )
-
-    with col2:
-
-        if SERPAPI_API_KEY:
-
-            st.success(
-                "SerpAPI: Connected"
-            )
-
-        else:
-
-            st.warning(
-                "SerpAPI: Not configured"
-            )
-
-    st.divider()
-
-    st.subheader(
-        "🔎 Search Settings"
-    )
-
-    max_results = st.slider(
-        "Results per category",
-        3,
-        15,
-        int(
+    st.session_state.settings[
+        "max_results"
+    ] = st.number_input(
+        "API search results",
+        min_value=5,
+        max_value=50,
+        value=int(
             st.session_state.settings[
                 "max_results"
             ]
         )
     )
 
-    st.subheader(
-        "🤖 AI Settings"
-    )
-
-    temperature = st.slider(
+    st.session_state.settings[
+        "ai_temperature"
+    ] = st.slider(
         "AI Temperature",
-        0.0,
-        0.5,
-        float(
+        min_value=0.0,
+        max_value=1.0,
+        value=float(
             st.session_state.settings[
                 "ai_temperature"
             ]
         ),
-        0.05
+        step=0.1
     )
-
-    if st.button(
-        "💾 Save Settings"
-    ):
-
-        st.session_state.settings = {
-
-            "max_results":
-                max_results,
-
-            "ai_temperature":
-                temperature
-        }
-
-        st.success(
-            "Settings saved."
-        )
 
     st.divider()
 
     st.subheader(
-        "🧹 Reset Application"
+        "🗑️ Clear Data"
     )
 
     if st.button(
-        "Reset Shopping Session"
+        "Clear Search Results"
     ):
 
         st.session_state.products = []
 
         st.session_state.selected_ids = []
 
-        st.session_state.saved_products = []
-
-        st.session_state.search_history = []
-
-        st.session_state.last_recommendation = None
-
-        st.session_state.categories = []
-
-        st.session_state.preferences = ""
-
         st.success(
-            "Shopping session reset."
+            "Search results cleared."
         )
 
         st.rerun()
 
-    st.divider()
+    if st.button(
+        "Clear Saved Products"
+    ):
 
-    st.subheader(
-        "📌 About SmartShop AI"
-    )
+        st.session_state.saved_products = []
 
-    st.write(
-        """
-        **SmartShop AI** is an AI-powered shopping
-        comparison and budget optimization agent.
+        st.success(
+            "Saved products cleared."
+        )
 
-        ### Features
-
-        • Shopping website product search
-
-        • Budget filtering
-
-        • Product comparison
-
-        • Price comparison
-
-        • Rating analysis
-
-        • Review analysis
-
-        • Manual product selection
-
-        • Automatic product selection
-
-        • Budget-constrained optimization
-
-        • AI recommendation
-
-        • Alternative combinations
-
-        • Direct shopping website links
-
-        ### Technology
-
-        Python + Streamlit + Groq + SerpAPI
-
-        Shopping data is retrieved from Google Shopping
-        through SerpAPI and localized for India.
-        """
-    )
+        st.rerun()
