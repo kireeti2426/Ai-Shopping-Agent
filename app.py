@@ -21,281 +21,149 @@ st.set_page_config(
 # =========================================================
 # GLOBAL CSS
 # =========================================================
-
-# =========================================================
-# GLOBAL CSS
-# =========================================================
-
 st.markdown("""
 <style>
 
-    /* =====================================================
-       MAIN PAGE
-       ===================================================== */
+/* =====================================================
+   GENERAL PAGE TEXT
+   ===================================================== */
 
-    .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 3rem;
-    }
+.stApp {
+    color: #111827;
+}
 
-    /* Make normal Streamlit text dark */
-    .stApp {
-        color: #111827;
-    }
+h1, h2, h3, h4, h5, h6 {
+    color: #111827 !important;
+}
 
-    /* Main headings */
-    h1, h2, h3, h4, h5, h6 {
-        color: #111827 !important;
-        font-weight: 700 !important;
-    }
+/* Normal markdown text */
+[data-testid="stMarkdownContainer"] p {
+    color: #111827;
+}
 
-    /* Paragraphs and normal text */
-    p, span, label, div {
-        color: #111827;
-    }
+/* =====================================================
+   SIDEBAR
+   ===================================================== */
 
-    /* Streamlit markdown text */
-    [data-testid="stMarkdownContainer"] {
-        color: #111827;
-    }
+[data-testid="stSidebar"] {
+    border-right: 1px solid #e5e7eb;
+}
 
-    [data-testid="stMarkdownContainer"] p {
-        color: #111827;
-    }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] h4 {
+    color: #111827 !important;
+}
 
-    [data-testid="stMarkdownContainer"] h1,
-    [data-testid="stMarkdownContainer"] h2,
-    [data-testid="stMarkdownContainer"] h3,
-    [data-testid="stMarkdownContainer"] h4,
-    [data-testid="stMarkdownContainer"] h5,
-    [data-testid="stMarkdownContainer"] h6 {
-        color: #111827 !important;
-    }
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+    color: #374151 !important;
+}
 
+/* =====================================================
+   INPUT LABELS
+   ===================================================== */
 
-    /* =====================================================
-       HERO SECTION
-       ===================================================== */
+[data-testid="stWidgetLabel"] {
+    color: #111827 !important;
+}
 
-    .hero {
-        padding: 2rem;
-        border-radius: 22px;
-        background: linear-gradient(
-            135deg,
-            #eef2ff,
-            #f8fafc
-        );
-        border: 1px solid #e2e8f0;
-        margin-bottom: 1.5rem;
-    }
+[data-testid="stWidgetLabel"] p {
+    color: #111827 !important;
+}
 
-    .hero h1 {
-        margin-bottom: .35rem;
-        color: #111827 !important;
-    }
+/* =====================================================
+   TEXT INPUT
+   ===================================================== */
 
-    .hero p {
-        color: #374151 !important;
-    }
+input {
+    color: #111827 !important;
+}
 
+textarea {
+    color: #111827 !important;
+}
 
-    /* =====================================================
-       PRODUCT CARDS
-       ===================================================== */
+input::placeholder,
+textarea::placeholder {
+    color: #6b7280 !important;
+}
 
-    .card {
-        padding: 1.1rem;
-        border-radius: 16px;
-        border: 1px solid #e2e8f0;
-        background: white;
-        margin-bottom: .8rem;
-    }
+/* =====================================================
+   SELECTBOX / MULTISELECT
+   ===================================================== */
 
-    .product-title {
-        color: #111827 !important;
-        font-size: 1.15rem;
-        font-weight: 700;
-    }
+div[data-baseweb="select"] {
+    color: #111827 !important;
+}
 
-    .product-price {
-        color: #111827 !important;
-        font-size: 1.3rem;
-        font-weight: 800;
-        margin-top: .4rem;
-    }
+div[data-baseweb="select"] span {
+    color: #111827 !important;
+}
 
-    .brand-badge {
-        color: #1f2937 !important;
-        background: #eef2ff;
-        padding: .25rem .6rem;
-        border-radius: 999px;
-        font-size: .8rem;
-        font-weight: 600;
-        display: inline-block;
-        margin-top: .3rem;
-    }
+/* =====================================================
+   PRODUCT CARD
+   ===================================================== */
 
+.product-title {
+    color: #111827 !important;
+    font-size: 1.15rem;
+    font-weight: 700;
+}
 
-    /* =====================================================
-       MUTED TEXT
-       ===================================================== */
+.product-price {
+    color: #111827 !important;
+    font-size: 1.3rem;
+    font-weight: 800;
+}
 
-    .small-muted {
-        color: #64748b !important;
-        font-size: .9rem;
-    }
+.brand-badge {
+    color: #1f2937 !important;
+    background: #eef2ff;
+    padding: .25rem .6rem;
+    border-radius: 999px;
+    font-size: .8rem;
+    font-weight: 600;
+}
 
+/* =====================================================
+   METRICS
+   ===================================================== */
 
-    /* =====================================================
-       SCORE
-       ===================================================== */
+[data-testid="stMetricLabel"] {
+    color: #4b5563 !important;
+}
 
-    .score {
-        color: #111827 !important;
-        font-size: 1.45rem;
-        font-weight: 700;
-    }
+[data-testid="stMetricValue"] {
+    color: #111827 !important;
+}
 
+/* =====================================================
+   CAPTIONS
+   ===================================================== */
 
-    /* =====================================================
-       TAGS
-       ===================================================== */
+[data-testid="stCaptionContainer"] {
+    color: #6b7280 !important;
+}
 
-    .tag {
-        display: inline-block;
-        padding: .25rem .55rem;
-        margin: .15rem;
-        border-radius: 999px;
-        background: #eef2ff;
-        color: #1f2937 !important;
-        font-size: .78rem;
-        font-weight: 600;
-    }
+/* =====================================================
+   EXPANDERS
+   ===================================================== */
 
+[data-testid="stExpander"] summary {
+    color: #111827 !important;
+}
 
-    /* =====================================================
-       SIDEBAR
-       ===================================================== */
+/* =====================================================
+   LINKS
+   ===================================================== */
 
-    [data-testid="stSidebar"] {
-        border-right: 1px solid #e2e8f0;
-    }
-
-    [data-testid="stSidebar"] h1,
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3,
-    [data-testid="stSidebar"] h4 {
-        color: #111827 !important;
-    }
-
-    [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] span,
-    [data-testid="stSidebar"] label {
-        color: #1f2937 !important;
-    }
-
-
-    /* =====================================================
-       INPUT LABELS
-       ===================================================== */
-
-    [data-testid="stWidgetLabel"] p {
-        color: #111827 !important;
-        font-weight: 600 !important;
-    }
-
-    [data-testid="stWidgetLabel"] {
-        color: #111827 !important;
-    }
-
-
-    /* =====================================================
-       SELECTBOX / MULTISELECT / TEXT INPUT
-       ===================================================== */
-
-    div[data-baseweb="select"] {
-        color: #111827 !important;
-    }
-
-    div[data-baseweb="select"] * {
-        color: #111827 !important;
-    }
-
-    input,
-    textarea {
-        color: #111827 !important;
-    }
-
-    input::placeholder,
-    textarea::placeholder {
-        color: #6b7280 !important;
-    }
-
-
-    /* =====================================================
-       METRICS
-       ===================================================== */
-
-    [data-testid="stMetricLabel"] {
-        color: #4b5563 !important;
-    }
-
-    [data-testid="stMetricValue"] {
-        color: #111827 !important;
-    }
-
-    [data-testid="stMetricDelta"] {
-        color: #374151 !important;
-    }
-
-
-    /* =====================================================
-       CAPTIONS
-       ===================================================== */
-
-    [data-testid="stCaptionContainer"] {
-        color: #6b7280 !important;
-    }
-
-    [data-testid="stCaptionContainer"] * {
-        color: #6b7280 !important;
-    }
-
-
-    /* =====================================================
-       BUTTON TEXT
-       ===================================================== */
-
-    button {
-        font-weight: 600 !important;
-    }
-
-
-    /* =====================================================
-       EXPANDERS
-       ===================================================== */
-
-    [data-testid="stExpander"] {
-        border-color: #e2e8f0;
-    }
-
-    [data-testid="stExpander"] summary {
-        color: #111827 !important;
-        font-weight: 600 !important;
-    }
-
-
-    /* =====================================================
-       LINKS
-       ===================================================== */
-
-    a {
-        color: #2563eb !important;
-    }
+a {
+    color: #2563eb !important;
+}
 
 </style>
 """, unsafe_allow_html=True)
-
 
 # =========================================================
 # API SETUP
