@@ -1178,14 +1178,14 @@ if page == "🏠 Home":
 
     st.markdown(
         """
-        - 🔎 Search products from shopping websites
-        - 💰 Filter by price range
-        - 🏷️ Optional brand filtering
-        - 📦 Limit products per category
-        - ⚖️ Compare multiple products
-        - 🤖 AI shopping recommendations
-        - 🧮 Smart combination optimization
-        - 🛒 Direct product website links
+        -  Search products from shopping websites
+        -  Filter by price range
+        -  Optional brand filtering
+        -  Limit products per category
+        -  Compare multiple products
+        -  AI shopping recommendations
+        -  Smart combination optimization
+        -  Direct product website links
         """
     )
 
