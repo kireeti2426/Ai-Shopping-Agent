@@ -21,9 +21,6 @@ st.set_page_config(
 # =========================================================
 # GLOBAL CSS
 # =========================================================
-# =========================================================
-# GLOBAL CSS
-# =========================================================
 
 st.markdown("""
 <style>
@@ -70,6 +67,43 @@ st.markdown("""
     border-radius: 999px;
     background: #eef2ff;
     font-size: .78rem;
+}
+
+
+/* =====================================================
+   COLORFUL HERO BANNER
+   ===================================================== */
+
+.hero-banner {
+    background: linear-gradient(
+        135deg,
+        #6366f1 0%,
+        #8b5cf6 45%,
+        #ec4899 100%
+    );
+
+    padding: 35px 40px;
+    border-radius: 22px;
+    margin-bottom: 25px;
+
+    box-shadow:
+        0 10px 30px rgba(99, 102, 241, 0.25);
+}
+
+.hero-title {
+    color: white !important;
+    font-size: 42px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 10px;
+}
+
+.hero-subtitle {
+    color: white !important;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.6;
+    max-width: 850px;
 }
 
 </style>
