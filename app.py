@@ -925,7 +925,7 @@ def render_product_card(
 
 if st.session_state.get("preferences", "").strip():
 
-    relevance = preference_relevance(
+    relevance = preference_relevance
         product,
         st.session_state.preferences
     )
