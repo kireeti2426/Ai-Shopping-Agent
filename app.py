@@ -978,7 +978,7 @@ if st.session_state.get("preferences", "").strip():
         <div style="margin-top:8px;">
           st.markdown(
     f"""
-    <b>🎯 Preference Match:</b>
+    <b> Preference Match:</b>
     {relevance}%
     """,
     unsafe_allow_html=True
