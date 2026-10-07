@@ -919,7 +919,38 @@ def render_product_card(
             "reviews",
             0
         )
+# --------------------------------------------------------
+# PREFERENCE MATCH
+# --------------------------------------------------------
 
+if st.session_state.get("preferences", "").strip():
+
+    relevance = preference_relevance(
+        product,
+        st.session_state.preferences
+    )
+
+    matches = product.get(
+        "matched_preferences",
+        []
+    )
+
+    st.markdown(
+        f"""
+        <div style="margin-top:8px;">
+            <b>🎯 Preference Match:</b>
+            {relevance:.0f}%
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    if matches:
+
+        st.caption(
+            "Matched: "
+            + ", ".join(matches[:5])
+        )
         st.write(
             f"⭐ {rating}  |  "
             f"💬 {int(reviews):,} reviews"
