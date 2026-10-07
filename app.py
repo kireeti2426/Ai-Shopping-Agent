@@ -926,7 +926,6 @@ def render_product_card(
 if st.session_state.get("preferences", "").strip():
 
     def preference_relevance(product, preferences):
-    """
     Calculate how relevant a product is based on user preferences.
     Returns a score from 0 to 100.
     """
