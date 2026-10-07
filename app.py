@@ -21,145 +21,55 @@ st.set_page_config(
 # =========================================================
 # GLOBAL CSS
 # =========================================================
+# =========================================================
+# GLOBAL CSS
+# =========================================================
+
 st.markdown("""
 <style>
 
-/* =====================================================
-   GENERAL PAGE TEXT
-   ===================================================== */
-
-.stApp {
-    color: #111827;
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
 }
 
-h1, h2, h3, h4, h5, h6 {
-    color: #111827 !important;
+.hero {
+    padding: 2rem;
+    border-radius: 22px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 1.5rem;
 }
 
-/* Normal markdown text */
-[data-testid="stMarkdownContainer"] p {
-    color: #111827;
+.hero h1 {
+    margin-bottom: .35rem;
 }
 
-/* =====================================================
-   SIDEBAR
-   ===================================================== */
-
-[data-testid="stSidebar"] {
-    border-right: 1px solid #e5e7eb;
+.card {
+    padding: 1.1rem;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    margin-bottom: .8rem;
 }
 
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3,
-[data-testid="stSidebar"] h4 {
-    color: #111827 !important;
+.small-muted {
+    color: #64748b;
+    font-size: .9rem;
 }
 
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-    color: #374151 !important;
-}
-
-/* =====================================================
-   INPUT LABELS
-   ===================================================== */
-
-[data-testid="stWidgetLabel"] {
-    color: #111827 !important;
-}
-
-[data-testid="stWidgetLabel"] p {
-    color: #111827 !important;
-}
-
-/* =====================================================
-   TEXT INPUT
-   ===================================================== */
-
-input {
-    color: #111827 !important;
-}
-
-textarea {
-    color: #111827 !important;
-}
-
-input::placeholder,
-textarea::placeholder {
-    color: #6b7280 !important;
-}
-
-/* =====================================================
-   SELECTBOX / MULTISELECT
-   ===================================================== */
-
-div[data-baseweb="select"] {
-    color: #111827 !important;
-}
-
-div[data-baseweb="select"] span {
-    color: #111827 !important;
-}
-
-/* =====================================================
-   PRODUCT CARD
-   ===================================================== */
-
-.product-title {
-    color: #111827 !important;
-    font-size: 1.15rem;
+.score {
+    font-size: 1.45rem;
     font-weight: 700;
 }
 
-.product-price {
-    color: #111827 !important;
-    font-size: 1.3rem;
-    font-weight: 800;
-}
-
-.brand-badge {
-    color: #1f2937 !important;
-    background: #eef2ff;
-    padding: .25rem .6rem;
+.tag {
+    display: inline-block;
+    padding: .25rem .55rem;
+    margin: .15rem;
     border-radius: 999px;
-    font-size: .8rem;
-    font-weight: 600;
-}
-
-/* =====================================================
-   METRICS
-   ===================================================== */
-
-[data-testid="stMetricLabel"] {
-    color: #4b5563 !important;
-}
-
-[data-testid="stMetricValue"] {
-    color: #111827 !important;
-}
-
-/* =====================================================
-   CAPTIONS
-   ===================================================== */
-
-[data-testid="stCaptionContainer"] {
-    color: #6b7280 !important;
-}
-
-/* =====================================================
-   EXPANDERS
-   ===================================================== */
-
-[data-testid="stExpander"] summary {
-    color: #111827 !important;
-}
-
-/* =====================================================
-   LINKS
-   ===================================================== */
-
-a {
-    color: #2563eb !important;
+    background: #eef2ff;
+    font-size: .78rem;
 }
 
 </style>
