@@ -24,90 +24,56 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 3rem;
+    }
 
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 3rem;
-}
+    .hero {
+        padding: 2rem;
+        border-radius: 22px;
+        background: linear-gradient(135deg, #eef2ff, #f8fafc);
+        border: 1px solid #e2e8f0;
+        margin-bottom: 1.5rem;
+    }
 
-.hero {
-    padding: 2rem;
-    border-radius: 22px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    margin-bottom: 1.5rem;
-}
+    .hero h1 {
+        margin-bottom: .35rem;
+    }
 
-.hero h1 {
-    margin-bottom: .35rem;
-}
+    .card {
+        padding: 1.1rem;
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        background: white;
+        margin-bottom: .8rem;
+    }
 
-.card {
-    padding: 1.1rem;
-    border-radius: 16px;
-    border: 1px solid #e2e8f0;
-    background: #ffffff;
-    margin-bottom: .8rem;
-}
+    .small-muted {
+        color: #64748b;
+        font-size: .9rem;
+    }
 
-.small-muted {
-    color: #64748b;
-    font-size: .9rem;
-}
+    .score {
+        font-size: 1.45rem;
+        font-weight: 700;
+    }
 
-.score {
-    font-size: 1.45rem;
-    font-weight: 700;
-}
+    .tag {
+        display: inline-block;
+        padding: .25rem .55rem;
+        margin: .15rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        font-size: .78rem;
+    }
 
-.tag {
-    display: inline-block;
-    padding: .25rem .55rem;
-    margin: .15rem;
-    border-radius: 999px;
-    background: #eef2ff;
-    font-size: .78rem;
-}
-
-
-/* =====================================================
-   COLORFUL HERO BANNER
-   ===================================================== */
-
-.hero-banner {
-    background: linear-gradient(
-        135deg,
-        #6366f1 0%,
-        #8b5cf6 45%,
-        #ec4899 100%
-    );
-
-    padding: 35px 40px;
-    border-radius: 22px;
-    margin-bottom: 25px;
-
-    box-shadow:
-        0 10px 30px rgba(99, 102, 241, 0.25);
-}
-
-.hero-title {
-    color: white !important;
-    font-size: 42px;
-    font-weight: 800;
-    line-height: 1.2;
-    margin-bottom: 10px;
-}
-
-.hero-subtitle {
-    color: white !important;
-    font-size: 18px;
-    font-weight: 500;
-    line-height: 1.6;
-    max-width: 850px;
-}
-
+    [data-testid="stSidebar"] {
+        border-right: 1px solid #e2e8f0;
+    }
 </style>
 """, unsafe_allow_html=True)
+
 
 # =========================================================
 # API SETUP
@@ -289,39 +255,148 @@ def run_agent(system_prompt, user_prompt, json_mode=True):
     return response.choices[0].message.content, latency
 
 
+# Preference profiles used by both the shopping search and the ranking layer.
+# The first terms are stronger signals; the rest are supporting signals.
+PREFERENCE_PROFILES = {
+    "gaming": [
+        ("gaming", 10), ("rtx", 9), ("gtx", 9), ("geforce", 8),
+        ("radeon", 8), ("arc graphics", 7), ("dedicated graphics", 8),
+        ("high refresh", 7), ("144hz", 7), ("165hz", 7), ("240hz", 7),
+        ("tuf", 6), ("rog", 6), ("legion", 6), ("loq", 6),
+        ("nitro", 6), ("predator", 6), ("omen", 6), ("victus", 6)
+    ],
+    "student": [
+        ("student", 10), ("study", 8), ("education", 8), ("portable", 7),
+        ("lightweight", 7), ("battery", 6), ("long battery", 8),
+        ("everyday", 5), ("office", 5), ("value", 5), ("budget", 5)
+    ],
+    "lightweight": [
+        ("lightweight", 10), ("portable", 9), ("thin", 7), ("slim", 7),
+        ("ultraportable", 9), ("compact", 6), ("thin and light", 10)
+    ],
+    "programming": [
+        ("programming", 10), ("developer", 9), ("development", 8),
+        ("coding", 10), ("code", 7), ("software", 7), ("linux", 6),
+        ("16gb", 6), ("core i5", 5), ("core i7", 6), ("ryzen 5", 5),
+        ("ryzen 7", 6), ("ssd", 5)
+    ],
+    "business": [
+        ("business", 10), ("professional", 8), ("enterprise", 7),
+        ("office", 6), ("productivity", 8), ("security", 6),
+        ("reliable", 6), ("thinkpad", 7), ("latitude", 7), ("elitebook", 7)
+    ],
+    "long battery": [
+        ("long battery", 10), ("battery life", 10), ("all day battery", 10),
+        ("long-lasting battery", 10), ("battery", 6), ("power efficient", 7),
+        ("energy efficient", 7)
+    ],
+    "16gb ram": [
+        ("16gb", 10), ("16 gb", 10), ("16gb ram", 10), ("32gb", 8),
+        ("32 gb", 8), ("memory", 4), ("ram", 4)
+    ],
+    "video editing": [
+        ("video editing", 10), ("video editor", 9), ("premiere pro", 9),
+        ("davinci resolve", 9), ("after effects", 8), ("4k editing", 9),
+        ("rtx", 7), ("dedicated graphics", 8), ("32gb", 7), ("16gb", 6)
+    ],
+    "ai/ml": [
+        ("ai/ml", 10), ("machine learning", 10), ("deep learning", 10),
+        ("artificial intelligence", 9), ("cuda", 10), ("nvidia", 7),
+        ("rtx", 8), ("dedicated graphics", 8), ("gpu", 8),
+        ("16gb", 6), ("32gb", 7)
+    ],
+}
+
+
+def get_preference_keys(preferences):
+    text = str(preferences or "").lower().strip()
+    keys = []
+    for key in PREFERENCE_PROFILES:
+        if key in text:
+            keys.append(key)
+    return keys
+
+
+def preference_search_terms(preferences):
+    """Return concise search terms for recognized preferences plus useful custom words."""
+    text = str(preferences or "").lower().strip()
+    keys = get_preference_keys(text)
+    terms = []
+
+    for key in keys:
+        terms.append(key)
+
+    # Keep meaningful custom words too, so user-entered preferences such as
+    # OLED, 1TB SSD, touchscreen, etc. can influence the shopping query.
+    custom_words = [
+        word for word in text.replace(",", " ").split()
+        if len(word) >= 4 and word not in {"with", "good", "best", "want", "need", "for", "laptop"}
+    ]
+
+    for word in custom_words:
+        if word not in terms:
+            terms.append(word)
+
+    return terms[:10]
+
+
+def preference_relevance(product, preferences=""):
+    """Score how strongly a product matches the user's stated preferences."""
+    text = (
+        str(product.get("name", "")) + " " +
+        str(product.get("snippet", "")) + " " +
+        str(product.get("source", ""))
+    ).lower()
+
+    keys = get_preference_keys(preferences)
+    if not keys and not str(preferences).strip():
+        return 0
+
+    score = 0
+    matched = []
+
+    for key in keys:
+        for term, weight in PREFERENCE_PROFILES[key]:
+            if term in text:
+                score += weight
+                matched.append(term)
+
+    # Custom preference words still contribute.
+    for word in preference_search_terms(preferences):
+        if word not in keys and word in text:
+            score += 3
+            matched.append(word)
+
+    # Normalize to a 0-100 range while preserving differences between products.
+    max_possible = sum(
+        max(weight for _, weight in PREFERENCE_PROFILES[key])
+        for key in keys
+    ) or 10
+
+    relevance = min((score / max_possible) * 100, 100)
+    product["preference_relevance"] = round(relevance, 1)
+    product["matched_preferences"] = list(dict.fromkeys(matched))[:8]
+    return product["preference_relevance"]
+
+
 def product_score(product, preferences="", priorities=None):
     priorities = priorities or []
 
     rating = min(max(safe_float(product.get("rating")), 0), 5) / 5 * 100
-
     reviews = safe_float(product.get("reviews"))
     review_score = min(reviews / 1000 * 100, 100)
 
     price = product.get("price")
-    if price is None:
-        price_score = 40
-    else:
-        # Price score is relative; lower prices get a better value component.
-        price_score = 70
+    price_score = 40 if price is None else 70
 
-    preference_bonus = 0
+    preference_score = preference_relevance(product, preferences)
 
-    text = (
-        str(product.get("name", "")) + " " +
-        str(product.get("snippet", ""))
-    ).lower()
-
-    for word in str(preferences).lower().split():
-        if len(word) > 3 and word in text:
-            preference_bonus += 2
-
-    preference_bonus = min(preference_bonus, 20)
-
+    # Preference relevance is deliberately the strongest factor.
     score = (
-        rating * 0.40 +
-        review_score * 0.15 +
-        price_score * 0.20 +
-        preference_bonus * 0.25
+        rating * 0.30 +
+        review_score * 0.10 +
+        price_score * 0.10 +
+        preference_score * 0.50
     )
 
     if "High Rating" in priorities:
@@ -450,6 +525,17 @@ def render_product_card(product, show_select=True, show_save=True):
             )
             if product.get("snippet"):
                 st.write(product["snippet"][:300])
+
+            if st.session_state.preferences:
+                relevance = preference_relevance(
+                    product,
+                    st.session_state.preferences
+                )
+                matches = product.get("matched_preferences", [])
+                st.caption(
+                    f"🎯 Preference match: {relevance:.0f}%"
+                    + (f" • {', '.join(matches[:5])}" if matches else "")
+                )
 
         with cols[1]:
             st.metric("Price", money(product.get("price")))
@@ -645,11 +731,39 @@ elif menu == "🔎 Product Research":
             step=500,
         )
 
-    preferences = st.text_area(
-        "Preferences",
-        value=st.session_state.preferences,
-        placeholder="Example: high quality, comfortable, good ratings, value for money",
+    preference_choices = st.multiselect(
+        "🎯 Quick Preferences",
+        [
+            "Gaming",
+            "Student",
+            "Lightweight",
+            "Programming",
+            "Business",
+            "Long Battery",
+            "16GB RAM",
+            "Video Editing",
+            "AI/ML",
+        ],
+        help="Select one or more requirements. These will affect both the shopping search and product ranking.",
     )
+
+    custom_preferences = st.text_area(
+        "Additional Preferences",
+        value="",
+        placeholder="Example: OLED display, 1TB SSD, touchscreen, good keyboard",
+    )
+
+    preference_parts = list(preference_choices)
+    if custom_preferences.strip():
+        preference_parts.append(custom_preferences.strip())
+
+    preferences = ", ".join(preference_parts)
+
+    if preference_choices:
+        st.info(
+            "Preference matching is active: "
+            + ", ".join(preference_choices)
+        )
 
     col1, col2, col3 = st.columns(3)
 
@@ -720,8 +834,16 @@ elif menu == "🔎 Product Research":
 
                     query = category
 
-                    if search_mode == "Preference-focused Search" and preferences:
-                        query += " " + preferences
+                    # Always include the user's preferences in the shopping
+                    # query. This makes preferences affect which products are
+                    # retrieved, not only how they are ranked afterwards.
+                    if preferences.strip():
+                        search_terms = preference_search_terms(preferences)
+                        if search_terms:
+                            query += " " + " ".join(search_terms)
+
+                    if search_mode == "Preference-focused Search" and preferences.strip():
+                        query += " best match"
 
                     st.write(f"🛒 Searching for **{category}**...")
 
@@ -731,12 +853,52 @@ elif menu == "🔎 Product Research":
                     )
 
                     for item in raw_products:
-                        found.append(
-                            normalize_product(
-                                item,
-                                category
-                            )
+                        product_item = normalize_product(
+                            item,
+                            category
                         )
+
+                        # Calculate preference relevance immediately so the
+                        # returned dataset itself is preference-aware.
+                        preference_relevance(
+                            product_item,
+                            preferences
+                        )
+
+                        found.append(product_item)
+
+                # If matching products exist for a category, remove products
+                # that have zero preference relevance. If the source gives no
+                # detectable match at all, keep the results rather than showing
+                # an empty page.
+                if preferences.strip():
+                    grouped = {}
+                    for product_item in found:
+                        grouped.setdefault(
+                            product_item.get("category", "Other"), []
+                        ).append(product_item)
+
+                    preference_filtered = []
+                    for category_products in grouped.values():
+                        matching = [
+                            p for p in category_products
+                            if preference_relevance(p, preferences) > 0
+                        ]
+                        preference_filtered.extend(
+                            matching if matching else category_products
+                        )
+                    found = preference_filtered
+
+                # Preference-aware ranking happens before the products are
+                # displayed, compared, or passed to the AI advisor.
+                found.sort(
+                    key=lambda p: (
+                        preference_relevance(p, preferences),
+                        safe_float(p.get("rating")),
+                        safe_float(p.get("reviews")),
+                    ),
+                    reverse=True,
+                )
 
                 st.session_state.products = found
                 st.session_state.selected_ids = []
