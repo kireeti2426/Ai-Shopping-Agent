@@ -541,17 +541,21 @@ def filter_products(
     final_products = []
 
     for category, items in category_groups.items():
-
-        # Remove duplicates
+       
+        # Remove duplicates using product details, not only the ID
         unique = {}
 
         for p in items:
+            title_key = " ".join(
+                p.get("title", "").lower().strip().split()
+            )
+            price_key = p.get("price")
+            source_key = p.get("source", "").lower().strip()
 
-            pid = p["id"]
+            duplicate_key = (title_key, price_key, source_key)
 
-            if pid not in unique:
-
-                unique[pid] = p
+            if duplicate_key not in unique:
+                unique[duplicate_key] = p
 
         items = list(unique.values())
 
@@ -1180,11 +1184,12 @@ elif page == "🔎 Product Research":
         key="categories_input"
     )
 
-    categories = [
-        x.strip()
-        for x in categories_text.split(",")
-        if x.strip()
-    ]
+  
+categories = list(dict.fromkeys(
+    x.strip()
+    for x in categories_text.split(",")
+    if x.strip()
+))
 
     # --------------------------------------------------------
     # BRAND OPTIONS
