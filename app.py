@@ -1185,16 +1185,13 @@ elif page == "🔎 Product Research":
     )
 
   
-categories = list(dict.fromkeys(
-    x.strip()
-    for x in categories_text.split(",")
-    if x.strip()
-))
+    categories = list(dict.fromkeys(
+        x.strip()
+        for x in categories_text.split(",")
+        if x.strip()
+    ))
 
-    # --------------------------------------------------------
     # BRAND OPTIONS
-    # --------------------------------------------------------
-
     st.subheader("🏷️ Brand Filter")
 
     st.caption(
