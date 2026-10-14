@@ -1012,10 +1012,9 @@ def render_product_card(
             if product.get("link"):
 
                 st.link_button(
-                    "🛒 Visit Website",
-                    product["link"],
-                    key=visit_key
-                )
+    "🛒 Visit Website",
+    product["link"]
+)
 
     st.markdown(
         "</div>",
