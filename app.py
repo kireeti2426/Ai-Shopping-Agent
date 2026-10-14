@@ -522,17 +522,23 @@ def filter_products(
     category_groups = {}
 
     for p in filtered:
+        category = p.get("category", "Other")
 
-        category = p.get(
-            "category",
-            "Other"
-        )
+        # When brands are selected, keep a separate result bucket for
+        # each brand so one brand cannot use the entire category limit.
+        if selected_brands_normalized:
+            brand_key = normalize_brand(p.get("brand", ""))
+            if not brand_key:
+                title_lower = str(p.get("title", "")).lower()
+                brand_key = next(
+                    (b for b in selected_brands_normalized if b in title_lower),
+                    "unknown"
+                )
+            group_key = (category, brand_key)
+        else:
+            group_key = (category, "")
 
-        if category not in category_groups:
-
-            category_groups[category] = []
-
-        category_groups[category].append(p)
+        category_groups.setdefault(group_key, []).append(p)
 
     # --------------------------------------------------------
     # STRICT PRODUCTS PER CATEGORY
@@ -540,19 +546,23 @@ def filter_products(
 
     final_products = []
 
-    for category, items in category_groups.items():
-       
-        # Remove duplicates using product details, not only the ID
+    for group_key, items in category_groups.items():
+
+        # Remove duplicate listings even when the API gives them
+        # different IDs or sellers. Keep the first listing for each
+        # normalized product title within a category.
         unique = {}
 
         for p in items:
             title_key = " ".join(
-                p.get("title", "").lower().strip().split()
+                str(p.get("title", "")).lower().split()
             )
-            price_key = p.get("price")
-            source_key = p.get("source", "").lower().strip()
+            title_key = "".join(
+                ch for ch in title_key if ch.isalnum() or ch.isspace()
+            ).strip()
 
-            duplicate_key = (title_key, price_key, source_key)
+            # If a title is missing, fall back to the product ID.
+            duplicate_key = title_key or str(p.get("id", ""))
 
             if duplicate_key not in unique:
                 unique[duplicate_key] = p
@@ -1184,14 +1194,18 @@ elif page == "🔎 Product Research":
         key="categories_input"
     )
 
-  
-    categories = list(dict.fromkeys(
-        x.strip()
-        for x in categories_text.split(",")
-        if x.strip()
-    ))
+    categories = []
+    seen_categories = set()
+    for item in categories_text.split(","):
+        category_name = item.strip()
+        if category_name and category_name.lower() not in seen_categories:
+            categories.append(category_name)
+            seen_categories.add(category_name.lower())
 
+    # --------------------------------------------------------
     # BRAND OPTIONS
+    # --------------------------------------------------------
+
     st.subheader("🏷️ Brand Filter")
 
     st.caption(
@@ -1305,43 +1319,39 @@ elif page == "🔎 Product Research":
 
         progress = st.progress(0)
 
-        for i, category in enumerate(categories):
+        # Search each selected brand separately. A single query with
+        # many brands joined by OR often returns results for only one or
+        # two brands, such as just HP 14 laptops.
+        search_jobs = []
+        for category in categories:
+            if selected_brands:
+                for brand_name in selected_brands:
+                    search_jobs.append((category, brand_name))
+            else:
+                search_jobs.append((category, None))
 
-            # ------------------------------------------------
-            # Request more results from API
-            # ------------------------------------------------
+        requested_results = min(
+            100,
+            max(int(products_per_category) * 8, 30)
+        )
 
-            # We request more than needed because some
-            # products will be removed by price/brand filters.
-
-            requested_results = max(
-                products_per_category * 4,
-                20
-            )
+        for i, (category, brand_name) in enumerate(search_jobs):
+            search_term = f"{brand_name} {category}" if brand_name else category
 
             results = search_shopping(
-                query=category,
+                query=search_term,
                 min_price=min_price,
                 max_price=max_price,
-                brands=selected_brands,
+                brands=None,
                 max_results=requested_results
             )
 
-            # ------------------------------------------------
-            # Store category
-            # ------------------------------------------------
-
-            for p in results:
-
-                p["category"] = get_category_from_query(
-                    category
-                )
+            category_label = get_category_from_query(category)
+            for product in results:
+                product["category"] = category_label
 
             all_products.extend(results)
-
-            progress.progress(
-                (i + 1) / len(categories)
-            )
+            progress.progress((i + 1) / len(search_jobs))
 
         # ----------------------------------------------------
         # STRICT FILTER
