@@ -71,6 +71,32 @@ st.markdown("""
     [data-testid="stSidebar"] {
         border-right: 1px solid #e2e8f0;
     }
+        /* Make headings visible on light backgrounds */
+    h1, h2, h3, h4, h5, h6 {
+        color: #1e293b !important;
+    }
+
+    /* Hero banner text */
+    .hero h1,
+    .hero p {
+        color: #1e293b !important;
+    }
+
+    /* Home page information cards */
+    .card h3,
+    .card p {
+        color: #1e293b !important;
+    }
+
+    /* Improve readability of normal text */
+    .hero,
+    .card {
+        color: #334155 !important;
+    }
+
+    .small-muted {
+        color: #64748b !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
